@@ -97,12 +97,20 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
 │   ├── 20-az-login.sh     # Azure authentication
 │   ├── 30-deploy-octopets.sh        # Deploy infrastructure
 │   ├── 31-deploy-octopets-containers.sh  # Build & deploy containers
+│   ├── 32-configure-health-probes.sh     # Configure health probes
+│   ├── 35-apply-memory-fix.sh       # Apply memory fix patch
 │   ├── 40-deploy-sre-agent.sh       # Deploy SRE Agent
 │   ├── 50-deploy-alert-rules.sh     # Deploy ServiceNow integration
+│   ├── 60-generate-traffic.sh       # Generate test traffic
+│   ├── 61-check-memory.sh           # Check memory usage
 │   ├── load-env.sh        # Load environment variables
 │   └── set-dotenv-value.sh          # Update .env values
 ├── demo/
 │   ├── README.md          # ServiceNow demo execution guide
+│   ├── QUICK_REFERENCE_MEMORY_FIX.md  # Quick deployment guide
+│   ├── OCTOPETS_MEMORY_FIX.md         # Detailed fix documentation
+│   ├── INCIDENT_RESPONSE_INC0010008.md  # Incident analysis
+│   ├── octopets-memory-fix.patch      # Code changes patch
 │   ├── servicenow-azure-resource-error-handler.yaml  # SRE Agent subagent
 │   └── octopets-alert-rules.bicep   # Alert rules template
 └── external/
@@ -210,7 +218,28 @@ scripts/50-deploy-alert-rules.sh
 
 ## 🧪 Testing the Lab
 
-### 1. Verify Octopets Application
+### 1. Apply Memory Fix (INC0010008)
+
+**Important**: The Octopets sample contains deliberate test code that causes high memory usage. Apply the fix before deployment:
+
+```bash
+scripts/35-apply-memory-fix.sh
+```
+
+This removes test code that allocates 1GB of memory in production. See [demo/QUICK_REFERENCE_MEMORY_FIX.md](demo/QUICK_REFERENCE_MEMORY_FIX.md) for details.
+
+**What it fixes:**
+- Removes `AReallyExpensiveOperation()` that allocated 1GB memory
+- Removes `ERRORS=true` flag from production mode
+- Adds health endpoints: `/health/live`, `/health/ready`
+- Increases memory limit: 1Gi → 2Gi
+- Reduces concurrency: 10 → 5 requests per replica
+
+**Expected results:**
+- Memory usage: ~870 MiB → ~110-120 MiB (87% reduction)
+- Memory percentage: 86% → 6-7% of limit
+
+### 2. Verify Octopets Application
 
 Access the frontend at the URL from deployment output:
 ```bash
@@ -219,14 +248,37 @@ echo "Frontend: $OCTOPETS_FE_URL"
 echo "Backend: $OCTOPETS_API_URL"
 ```
 
-### 2. Configure SRE Agent
+### 2. Verify Octopets Application
+
+Access the frontend at the URL from deployment output:
+```bash
+source scripts/load-env.sh
+echo "Frontend: $OCTOPETS_FE_URL"
+echo "Backend: $OCTOPETS_API_URL"
+```
+
+**Check memory usage:**
+```bash
+scripts/61-check-memory.sh
+```
+
+**Verify health endpoints:**
+```bash
+# Liveness probe
+curl https://$(az containerapp show -n octopetsapi -g rg-octopets-lab --query "properties.configuration.ingress.fqdn" -o tsv)/health/live
+
+# Readiness probe
+curl https://$(az containerapp show -n octopetsapi -g rg-octopets-lab --query "properties.configuration.ingress.fqdn" -o tsv)/health/ready
+```
+
+### 3. Configure SRE Agent
 
 1. Navigate to Azure Portal → Resource Groups → `rg-sre-agent-lab` → `sre-agent-lab`
 2. Configure Azure Monitor as the incident platform
 3. Set up workflows and monitoring rules
 4. Start in **Review** mode before switching to **Autonomous**
 
-### 3. Create Test Alert
+### 4. Create Test Alert
 
 1. Create an Azure Monitor alert rule in `rg-octopets-lab`
 2. Trigger the alert (e.g., CPU threshold)
