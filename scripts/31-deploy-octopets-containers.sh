@@ -68,6 +68,11 @@ fe_app="octopetsfe"
 echo "Updating backend container app: $api_app"
 az containerapp update -g "$OCTOPETS_RG_NAME" -n "$api_app" \
   --image "$api_tag" \
+  --cpu 0.5 --memory 2.0Gi \
+  --min-replicas 1 --max-replicas 3 \
+  --scale-rule-name http-scaling-rule \
+  --scale-rule-type http \
+  --scale-rule-http-concurrency 5 \
   --query "properties.configuration.ingress.fqdn" -o tsv >/dev/null || \
 az containerapp create -g "$OCTOPETS_RG_NAME" -n "$api_app" \
   --environment "$cae_name" \
@@ -76,8 +81,17 @@ az containerapp create -g "$OCTOPETS_RG_NAME" -n "$api_app" \
   --registry-identity system \
   --ingress external \
   --target-port 8080 \
+  --cpu 0.5 --memory 2.0Gi \
+  --min-replicas 1 --max-replicas 3 \
+  --scale-rule-name http-scaling-rule \
+  --scale-rule-type http \
+  --scale-rule-http-concurrency 5 \
   --env-vars "EnableSwagger=true" "ASPNETCORE_URLS=http://+:8080" \
   --query "properties.configuration.ingress.fqdn" -o tsv >/dev/null
+
+# Add health probes
+echo "Configuring health probes for $api_app"
+"${PWD}/scripts/32-configure-health-probes.sh" || echo "Warning: Failed to configure health probes, continuing..."
 
 api_fqdn="$(az containerapp show -g "$OCTOPETS_RG_NAME" -n "$api_app" --query "properties.configuration.ingress.fqdn" -o tsv)"
 api_url="https://${api_fqdn}"
