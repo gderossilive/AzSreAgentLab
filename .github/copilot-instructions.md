@@ -177,6 +177,7 @@ When suggesting code or solutions, reference:
 - Octopets Sample: https://github.com/Azure-Samples/octopets
 - Lab Specification: `specs/specs.md`
 - ServiceNow Demo: `demo/README.md` and `specs/IncidentAutomationServiceNow.md`
+- Subagent YAML: `demo/servicenow-subagent-simple.yaml` (simplified valid format for Azure Portal)
 
 ## Development Environment
 

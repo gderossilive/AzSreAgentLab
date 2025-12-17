@@ -115,8 +115,8 @@ Alert Rules:
 3. **Configure ServiceNow Trigger**:
    - **Trigger Name**: `ServiceNow Incident`
    - **Trigger Type**: `Scheduled` (every 2 minutes)
-   - **YAML Configuration**: Copy contents from `demo/servicenow-azure-resource-error-handler.yaml`
-   - **Update Email**: Replace `<INSERT_YOUR_EMAIL_HERE>` with your actual email
+   - **YAML Configuration**: Copy contents from `demo/servicenow-subagent-simple.yaml`
+   - **Update Email**: Replace `<INSERT_YOUR_EMAIL_HERE>` with your actual email in the system_prompt
    - **Save and Enable**
 
 4. **Verify Connectors**:

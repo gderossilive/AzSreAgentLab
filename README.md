@@ -79,6 +79,7 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
 6. **[Optional] Deploy ServiceNow Integration Demo**
    ```bash
    # See demo/README.md for complete instructions
+   # Requires ServiceNow developer instance and credentials in .env
    scripts/50-deploy-alert-rules.sh
    ```
 
