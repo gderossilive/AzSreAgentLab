@@ -62,17 +62,20 @@ echo "  Backend App:  $BACKEND_APP_NAME"
 echo "  Frontend App: $FRONTEND_APP_NAME"
 echo ""
 
-# Construct ServiceNow webhook URL for incident creation
-SERVICENOW_BASE_URL="https://${SERVICENOW_INSTANCE}.service-now.com"
-SERVICENOW_WEBHOOK_URL="${SERVICENOW_BASE_URL}/api/now/table/incident"
+# Use ServiceNow webhook URL from .env (could be direct API or Logic App)
+: "${SERVICENOW_WEBHOOK_URL:?Missing SERVICENOW_WEBHOOK_URL in .env - Run scripts/50-deploy-logic-app.sh first}"
 
-# Encode credentials for webhook (Basic Auth)
-# Note: In production, use OAuth or API keys instead of basic auth
+# For testing ServiceNow API connection only
+SERVICENOW_BASE_URL="https://${SERVICENOW_INSTANCE}.service-now.com"
 SERVICENOW_AUTH_HEADER="Authorization: Basic $(echo -n "${SERVICENOW_USERNAME}:${SERVICENOW_PASSWORD}" | base64)"
 
 echo "ServiceNow Configuration:"
 echo "  Webhook URL: $SERVICENOW_WEBHOOK_URL"
-echo "  Auth Method: Basic Authentication"
+if [[ "$SERVICENOW_WEBHOOK_URL" == *"logic.azure.com"* ]]; then
+  echo "  Integration: Logic App (with authentication)"
+else
+  echo "  Integration: Direct ServiceNow API"
+fi
 echo ""
 
 # Test ServiceNow connection
