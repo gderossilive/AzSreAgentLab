@@ -28,12 +28,8 @@ cd "$OCTOPETS_DIR"
 if git apply --check "$PATCH_FILE" 2>/dev/null; then
   git apply "$PATCH_FILE"
   echo "✅ Memory fix patch applied successfully!"
-else
-  echo "⚠️  Patch may already be applied or conflicts detected"
-  echo "Current git status:"
-  git status --short
-  
-  # Try to apply anyway with 3-way merge
+elif git diff --quiet; then
+  # Working directory is clean, try 3-way merge
   if git apply --3way "$PATCH_FILE" 2>/dev/null; then
     echo "✅ Patch applied with 3-way merge"
   else
@@ -41,6 +37,14 @@ else
     echo "See demo/OCTOPETS_MEMORY_FIX.md for manual instructions"
     exit 1
   fi
+else
+  echo "⚠️  Patch may already be applied or conflicts detected"
+  echo "Current git status:"
+  git status --short
+  echo ""
+  echo "❌ Cannot apply patch with uncommitted changes present"
+  echo "Either commit/stash changes or see demo/OCTOPETS_MEMORY_FIX.md for manual instructions"
+  exit 1
 fi
 
 echo ""

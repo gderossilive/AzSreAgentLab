@@ -51,11 +51,16 @@ EOF
 echo "Applying health probe configuration..."
 
 # Use Azure REST API to patch the container app
-az rest \
+if az rest \
   --method PATCH \
   --uri "/subscriptions/${subscription_id}/resourceGroups/${OCTOPETS_RG_NAME}/providers/Microsoft.App/containerApps/${api_app}?api-version=2024-03-01" \
-  --body @/tmp/containerapp-probes.yaml
-
-echo "Health probes configured successfully!"
-echo "Liveness probe: /health/live (every 10s after 30s initial delay)"
-echo "Readiness probe: /health/ready (every 5s after 5s initial delay)"
+  --body @/tmp/containerapp-probes.yaml; then
+  
+  echo "✅ Health probes configured successfully!"
+  echo "Liveness probe: /health/live (every 10s after 30s initial delay)"
+  echo "Readiness probe: /health/ready (every 5s after 5s initial delay)"
+else
+  echo "❌ Failed to configure health probes"
+  echo "Check Azure CLI authentication and permissions"
+  exit 1
+fi
