@@ -76,6 +76,12 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
    scripts/40-deploy-sre-agent.sh
    ```
 
+6. **[Optional] Deploy ServiceNow Integration Demo**
+   ```bash
+   # See demo/README.md for complete instructions
+   scripts/50-deploy-alert-rules.sh
+   ```
+
 ## 📁 Project Structure
 
 ```
@@ -83,15 +89,21 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
 ├── .env                    # Environment configuration (not in git)
 ├── .env.example           # Template for environment variables
 ├── specs/
-│   └── specs.md           # Complete lab specification
+│   ├── specs.md           # Complete lab specification
+│   └── IncidentAutomationServiceNow.md  # ServiceNow demo spec
 ├── scripts/
 │   ├── 10-clone-repos.sh  # Clone reference repositories
 │   ├── 20-az-login.sh     # Azure authentication
 │   ├── 30-deploy-octopets.sh        # Deploy infrastructure
 │   ├── 31-deploy-octopets-containers.sh  # Build & deploy containers
 │   ├── 40-deploy-sre-agent.sh       # Deploy SRE Agent
+│   ├── 50-deploy-alert-rules.sh     # Deploy ServiceNow integration
 │   ├── load-env.sh        # Load environment variables
 │   └── set-dotenv-value.sh          # Update .env values
+├── demo/
+│   ├── README.md          # ServiceNow demo execution guide
+│   ├── servicenow-azure-resource-error-handler.yaml  # SRE Agent subagent
+│   └── octopets-alert-rules.bicep   # Alert rules template
 └── external/
     ├── octopets/          # Octopets sample app
     └── sre-agent/         # SRE Agent reference repo
@@ -118,6 +130,12 @@ SRE_AGENT_RG_NAME=rg-sre-agent-lab
 SRE_AGENT_NAME=sre-agent-lab
 SRE_AGENT_ACCESS_LEVEL=High
 SRE_AGENT_TARGET_RESOURCE_GROUPS=rg-octopets-lab
+
+# ServiceNow Integration (Optional - for demo)
+SERVICENOW_INSTANCE=dev12345
+SERVICENOW_USERNAME=admin
+SERVICENOW_PASSWORD=<password>
+INCIDENT_NOTIFICATION_EMAIL=your-email@example.com
 ```
 
 ## 🛠️ Technical Details
@@ -143,6 +161,51 @@ The original Octopets Dockerfiles were modified to work with the project root as
 - **Octopets Sample**: https://github.com/Azure-Samples/octopets
 - **SRE Agent Configuration**: https://github.com/microsoft/sre-agent/blob/main/samples/automation/configuration/00-configure-sre-agent.md
 - **Bicep Deployment Guide**: https://github.com/microsoft/sre-agent/blob/main/samples/bicep-deployment/deployment-guide.md
+
+## 🎭 ServiceNow Incident Automation Demo
+
+The lab includes an optional demo that showcases automated incident management with ServiceNow:
+
+**What it demonstrates:**
+- Azure Monitor detects memory leak in Octopets backend
+- ServiceNow incident automatically created via webhook
+- SRE Agent investigates using Log Analytics and metrics
+- GitHub issue created with root cause analysis
+- ServiceNow incident updated with resolution details
+- Email notifications sent to stakeholders
+
+**Quick Start:**
+```bash
+# 1. Sign up for ServiceNow developer instance (free)
+# Visit: https://developer.servicenow.com/dev.do
+
+# 2. Configure credentials in .env
+scripts/set-dotenv-value.sh "SERVICENOW_INSTANCE" "dev12345"
+scripts/set-dotenv-value.sh "SERVICENOW_USERNAME" "admin"
+scripts/set-dotenv-value.sh "SERVICENOW_PASSWORD" "your-password"
+scripts/set-dotenv-value.sh "INCIDENT_NOTIFICATION_EMAIL" "your-email@example.com"
+
+# 3. Deploy alert rules and action group
+scripts/50-deploy-alert-rules.sh
+
+# 4. Configure SRE Agent subagent (Azure Portal)
+# Copy YAML from: demo/servicenow-azure-resource-error-handler.yaml
+
+# 5. Run the demo
+# See: demo/README.md for complete step-by-step instructions
+```
+
+**Components:**
+- **4 Azure Monitor Alert Rules**: Memory (80%, 90%) and error rate (10, 50 per min) thresholds
+- **ServiceNow Action Group**: Webhook integration for incident creation
+- **SRE Agent Subagent**: Automated investigation and remediation workflow
+- **Expected Duration**: 5-15 minutes end-to-end
+
+**Documentation:**
+- **Demo Guide**: [demo/README.md](demo/README.md)
+- **Full Specification**: [specs/IncidentAutomationServiceNow.md](specs/IncidentAutomationServiceNow.md)
+- **Subagent YAML**: [demo/servicenow-azure-resource-error-handler.yaml](demo/servicenow-azure-resource-error-handler.yaml)
+- **Alert Rules**: [demo/octopets-alert-rules.bicep](demo/octopets-alert-rules.bicep)
 
 ## 🧪 Testing the Lab
 

@@ -4,6 +4,8 @@
 
 This is an Azure SRE Agent lab environment that deploys a sample application (Octopets) and configures Azure SRE Agent with scoped permissions. The lab runs entirely in a dev container without Docker Desktop.
 
+**Optional Demo**: ServiceNow incident automation demo that showcases end-to-end automated incident response (Azure Monitor → ServiceNow → SRE Agent → GitHub → Email).
+
 ## Key Technologies
 
 - **Azure Services**: Container Apps, Container Registry, SRE Agent (Preview), Log Analytics, Application Insights
@@ -22,6 +24,7 @@ This is an Azure SRE Agent lab environment that deploys a sample application (Oc
 ```
 scripts/        # Deployment automation (bash)
 specs/          # Lab specifications (markdown)
+demo/           # ServiceNow integration demo files
 external/       # Cloned reference repositories
 .env            # Environment configuration (gitignored)
 .env.example    # Template for .env
@@ -78,6 +81,14 @@ These are set by deployment scripts:
 - `OCTOPETS_API_URL` - Backend container app URL
 - `OCTOPETS_FE_URL` - Frontend container app URL
 - `SRE_AGENT_TARGET_RESOURCE_GROUPS` - Scoped access for agent
+- `SERVICENOW_WEBHOOK_URL` - Auto-populated after alert deployment
+
+### ServiceNow Demo Variables (Optional)
+Required only for incident automation demo:
+- `SERVICENOW_INSTANCE` - ServiceNow instance prefix (e.g., dev12345)
+- `SERVICENOW_USERNAME` - ServiceNow admin username
+- `SERVICENOW_PASSWORD` - ServiceNow admin password
+- `INCIDENT_NOTIFICATION_EMAIL` - Email for notifications
 
 ## Common Patterns
 
@@ -103,6 +114,18 @@ az account show >/dev/null 2>&1 || {
 ```bash
 cd /path/to/project/root
 az acr build -r $ACR_NAME -t $IMAGE:$TAG -f path/to/Dockerfile .
+```
+
+### ServiceNow Demo Deployment
+```bash
+# Deploy alert rules with ServiceNow integration
+scripts/50-deploy-alert-rules.sh
+
+# Trigger demo memory leak
+az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "ERRORS=true"
+
+# Disable after testing
+az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "ERRORS=false"
 ```
 
 ## Security Best Practices
@@ -153,6 +176,7 @@ When suggesting code or solutions, reference:
 - SRE Agent Docs: https://github.com/microsoft/sre-agent
 - Octopets Sample: https://github.com/Azure-Samples/octopets
 - Lab Specification: `specs/specs.md`
+- ServiceNow Demo: `demo/README.md` and `specs/IncidentAutomationServiceNow.md`
 
 ## Development Environment
 
