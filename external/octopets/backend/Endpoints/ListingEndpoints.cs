@@ -13,7 +13,7 @@ public static class ListingEndpoints
 
         // Allocate memory in chunks to reach approximately 200MB
         // Reduced from 1GB to prevent OutOfMemoryException in 1Gi container
-        // Each iteration allocates 100MB
+        // 2 iterations allocate 100MB each for total of 200MB
         for (int i = 0; i < 2; i++)
         {
             // Allocate 100MB per iteration (100 * 1024 * 1024 = 104,857,600 bytes)
