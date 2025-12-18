@@ -4,7 +4,9 @@
 
 This is an Azure SRE Agent lab environment that deploys a sample application (Octopets) and configures Azure SRE Agent with scoped permissions. The lab runs entirely in a dev container without Docker Desktop.
 
-**Optional Demo**: ServiceNow incident automation demo that showcases end-to-end automated incident response (Azure Monitor → ServiceNow → SRE Agent → GitHub → Email).
+**Included Demos**:
+1. **ServiceNow Incident Automation** (`demos/ServiceNowAzureResourceHandler/`): End-to-end automated incident response (Azure Monitor → ServiceNow → SRE Agent → GitHub → Email)
+2. **Azure Health Check** (`demos/AzureHealthCheck/`): Scheduled autonomous monitoring with statistical anomaly detection, cost tracking, Azure Advisor integration, and Microsoft Teams notifications via Adaptive Cards
 
 ## Key Technologies
 
@@ -24,7 +26,9 @@ This is an Azure SRE Agent lab environment that deploys a sample application (Oc
 ```
 scripts/        # Deployment automation (bash)
 specs/          # Lab specifications (markdown)
-demo/           # ServiceNow integration demo files
+demos/          # Demo use cases
+  ServiceNowAzureResourceHandler/  # ServiceNow incident automation
+  AzureHealthCheck/                # Scheduled health monitoring with Teams
 external/       # Cloned reference repositories
 .env            # Environment configuration (gitignored)
 .env.example    # Template for .env
@@ -90,6 +94,10 @@ Required only for incident automation demo:
 - `SERVICENOW_PASSWORD` - ServiceNow admin password
 - `INCIDENT_NOTIFICATION_EMAIL` - Email for notifications
 
+### AzureHealthCheck Demo Variables (Optional)
+Required only for health monitoring demo:
+- `TEAMS_WEBHOOK_URL` - Power Automate workflow webhook URL (quoted, contains & characters)
+
 ## Common Patterns
 
 ### Loading Environment
@@ -126,6 +134,22 @@ az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "ERRORS=
 
 # Disable after testing
 az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "ERRORS=false"
+```
+
+### AzureHealthCheck Demo Testing
+```bash
+# Test Teams webhook connectivity
+scripts/70-test-teams-webhook.sh
+
+# Send sample anomaly alert
+scripts/71-send-sample-anomaly.sh
+
+# Upload subagent to Azure Portal
+# File: demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml
+# Trigger: Scheduled (cron: 0 */6 * * * for every 6 hours)
+
+# Configure Teams connector in SRE Agent portal
+# Connectors → Add Microsoft Teams → Use TEAMS_WEBHOOK_URL from .env
 ```
 
 ## Security Best Practices
@@ -176,8 +200,11 @@ When suggesting code or solutions, reference:
 - SRE Agent Docs: https://github.com/microsoft/sre-agent
 - Octopets Sample: https://github.com/Azure-Samples/octopets
 - Lab Specification: `specs/specs.md`
-- ServiceNow Demo: `demo/README.md` and `specs/IncidentAutomationServiceNow.md`
-- Subagent YAML: `demo/servicenow-subagent-simple.yaml` (simplified valid format for Azure Portal)
+- ServiceNow Demo: `demos/ServiceNowAzureResourceHandler/README.md` and `specs/IncidentAutomationServiceNow.md`
+- AzureHealthCheck Demo: `demos/AzureHealthCheck/README.md`
+- Subagent YAMLs: 
+  * ServiceNow: `demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml`
+  * Health Check: `demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml`
 
 ## Development Environment
 

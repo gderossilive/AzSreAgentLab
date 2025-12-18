@@ -7,6 +7,20 @@ A complete lab environment for testing Azure SRE Agent (Preview) with a realisti
 This lab deploys:
 - **Octopets Sample Application**: A .NET Aspire application (React frontend + ASP.NET Core backend) running on Azure Container Apps
 - **Azure SRE Agent**: AI-powered reliability assistant configured with High access scoped to the Octopets resource group only
+- **Autonomous Health Monitoring**: Scheduled health checks with statistical anomaly detection and Teams notifications
+
+### Included Demos
+
+1. **ServiceNow Incident Automation** (`demos/ServiceNowAzureResourceHandler/`)
+   - End-to-end automated incident response (Azure Monitor → ServiceNow → SRE Agent → GitHub)
+   - See [ServiceNow Demo](#-servicenow-incident-automation-demo) for details
+
+2. **Azure Health Check with Teams Alerts** (`demos/AzureHealthCheck/`)
+   - Scheduled autonomous monitoring of Azure resources (Container Apps, VMs, AKS, App Service)
+   - Statistical anomaly detection using MAD/z-score analysis
+   - Cost monitoring, Azure Advisor integration, dependency health checks
+   - Adaptive Card alerts sent to Microsoft Teams
+   - See [Health Check Demo](#-azure-health-check-demo) for details
 
 ## 📋 Architecture
 
@@ -101,10 +115,14 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
 │   ├── 50-deploy-alert-rules.sh     # Deploy ServiceNow integration
 │   ├── load-env.sh        # Load environment variables
 │   └── set-dotenv-value.sh          # Update .env values
-├── demo/
-│   ├── README.md          # ServiceNow demo execution guide
-│   ├── servicenow-azure-resource-error-handler.yaml  # SRE Agent subagent
-│   └── octopets-alert-rules.bicep   # Alert rules template
+├── demos/
+│   ├── ServiceNowAzureResourceHandler/
+│   │   ├── README.md      # ServiceNow demo execution guide
+│   │   ├── servicenow-subagent-simple.yaml  # SRE Agent subagent
+│   │   └── octopets-alert-rules.bicep       # Alert rules template
+│   └── AzureHealthCheck/
+│       ├── README.md      # Health check setup guide
+│       └── azurehealthcheck-subagent-simple.yaml  # Health monitoring subagent
 └── external/
     ├── octopets/          # Octopets sample app
     └── sre-agent/         # SRE Agent reference repo
@@ -190,10 +208,10 @@ scripts/set-dotenv-value.sh "INCIDENT_NOTIFICATION_EMAIL" "your-email@example.co
 scripts/50-deploy-alert-rules.sh
 
 # 4. Configure SRE Agent subagent (Azure Portal)
-# Copy YAML from: demo/servicenow-azure-resource-error-handler.yaml
+# Copy YAML from: demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml
 
 # 5. Run the demo
-# See: demo/README.md for complete step-by-step instructions
+# See: demos/ServiceNowAzureResourceHandler/README.md for complete step-by-step instructions
 ```
 
 **Components:**
@@ -203,10 +221,125 @@ scripts/50-deploy-alert-rules.sh
 - **Expected Duration**: 5-15 minutes end-to-end
 
 **Documentation:**
-- **Demo Guide**: [demo/README.md](demo/README.md)
+- **Demo Guide**: [demos/ServiceNowAzureResourceHandler/README.md](demos/ServiceNowAzureResourceHandler/README.md)
 - **Full Specification**: [specs/IncidentAutomationServiceNow.md](specs/IncidentAutomationServiceNow.md)
-- **Subagent YAML**: [demo/servicenow-azure-resource-error-handler.yaml](demo/servicenow-azure-resource-error-handler.yaml)
-- **Alert Rules**: [demo/octopets-alert-rules.bicep](demo/octopets-alert-rules.bicep)
+- **Subagent YAML**: [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml)
+- **Alert Rules**: [demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep](demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep)
+
+## 🏥 Azure Health Check Demo
+
+The lab includes an autonomous health monitoring demo that uses statistical analysis to detect anomalies and send intelligent alerts to Microsoft Teams:
+
+**What it demonstrates:**
+- Scheduled health checks (daily, every 6h, every 12h) across multiple Azure resource types
+- Statistical anomaly detection using Median Absolute Deviation (MAD) and z-score analysis
+- Cost anomaly detection (>50% spike vs 7-day average)
+- Azure Advisor recommendations integration (security, performance, cost, reliability)
+- Resource dependency health monitoring
+- Week-over-week trend analysis
+- Auto-remediation suggestions based on detected anomalies
+- Microsoft Teams notifications with rich Adaptive Cards
+
+**Supported Resource Types:**
+- Azure Container Apps
+- Virtual Machines
+- Azure Kubernetes Service (AKS)
+- App Service (Web Apps, Function Apps)
+
+**Detection Methods:**
+- **Statistical Analysis**: MAD/z-score ≥3 for metrics over 24h window
+- **Cost Monitoring**: Daily cost spikes >50% vs 7-day average
+- **Azure Advisor**: High/Critical recommendations
+- **Dependency Health**: Degraded/Unavailable linked resources
+- **Week-over-Week**: 30% performance degradation vs same time last week
+
+**Quick Start:**
+```bash
+# 1. Create Teams webhook via Power Automate
+# Follow: demos/AzureHealthCheck/README.md (Power Automate Setup)
+
+# 2. Configure webhook URL in .env
+scripts/set-dotenv-value.sh "TEAMS_WEBHOOK_URL" "https://prod-xx.logic.azure.com:443/workflows/..."
+
+# 3. Test webhook connectivity
+scripts/70-test-teams-webhook.sh
+scripts/71-send-sample-anomaly.sh
+
+# 4. Upload subagent to Azure Portal
+# Navigate to: Azure Portal → rg-sre-agent-lab → sre-agent-lab → Subagent Builder
+# Upload: demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml
+# Trigger: Scheduled (cron: 0 0 * * * for daily at midnight)
+
+# 5. Configure Teams connector in SRE Agent
+# Navigate to: Connectors → Add Microsoft Teams
+# Name: AzureHealthAlerts
+# Webhook URL: (from .env TEAMS_WEBHOOK_URL)
+
+# 6. Test manual execution
+# Click "Run Now" in subagent → Monitor Execution History
+```
+
+**Teams Message Features:**
+- Alert severity badges (Critical/High/Medium) with color coding
+- Resource details (type, name, resource group, location, health status)
+- Anomaly metrics with z-scores, baselines, min/max values, trend indicators (↑↓→)
+- Week-over-week change percentages
+- Top 3 Azure Advisor recommendations with categories
+- Dependency health status for linked resources
+- Analysis summary (root cause hypothesis, impact assessment, recommended actions)
+- Auto-remediation options (scale-up/out, rightsizing, rollback suggestions)
+- Action buttons (View in Portal, Metrics Dashboard, Logs, Cost Analysis, Advisor Recommendations)
+
+**Adaptive Card Format:**
+```json
+{
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "🔴 Critical Alert: Container App Memory Anomaly",
+      "weight": "Bolder",
+      "size": "Large",
+      "color": "Attention"
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        {"title": "Resource", "value": "octopetsapi"},
+        {"title": "Z-Score", "value": "4.2"},
+        {"title": "Current", "value": "1.2 GB"},
+        {"title": "Baseline", "value": "512 MB"}
+      ]
+    }
+  ]
+}
+```
+
+**Monitoring Metrics:**
+- **Container Apps**: Memory (WorkingSetBytes), CPU, Requests, Replicas
+- **VMs**: CPU %, Available Memory, Disk I/O, Network I/O
+- **AKS**: Node CPU/Memory %, Pod counts
+- **App Service**: Memory, CPU, HTTP 5xx errors, Response time
+
+**Scheduled Trigger Options:**
+- Daily at midnight: `0 0 * * *`
+- Every 6 hours: `0 */6 * * *`
+- Every 12 hours: `0 */12 * * *`
+- Business hours only (9 AM Mon-Fri): `0 9 * * 1-5`
+
+**Documentation:**
+- **Setup Guide**: [demos/AzureHealthCheck/README.md](demos/AzureHealthCheck/README.md)
+- **Subagent YAML**: [demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml](demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml)
+- **Test Scripts**: `scripts/70-test-teams-webhook.sh`, `scripts/71-send-sample-anomaly.sh`
+
+**Configuration Variables:**
+```bash
+# Teams Integration
+TEAMS_WEBHOOK_URL="https://prod-xx.logic.azure.com:443/workflows/..."  # Power Automate webhook
+```
+
+**Note**: Uses Power Automate "When a HTTP request is received" trigger, not traditional Teams Incoming Webhook.
 
 ## 🧪 Testing the Lab
 
