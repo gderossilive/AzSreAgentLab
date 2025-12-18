@@ -1,0 +1,159 @@
+/* filepath: c:\Users\ddelimarsky\source\octopets\frontend\src\styles\Footer.css */
+.footer {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  height: 258px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.footer-container {
+  width: 1160px; /* Match the exact width of 5 pet cards */
+  margin: 0 auto;
+  padding: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.footer-logo {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-family-base);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--neutral-100);
+}
+
+.footer-links {
+  display: flex;
+  gap: 20px;
+}
+
+.footer-links a {
+  color: var(--neutral-100);
+  text-decoration: none;
+  font-family: var(--font-family-base);
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.footer-links a:hover {
+  color: var(--primary-300);
+  text-decoration: underline;
+}
+
+.footer-social {
+  display: flex;
+  gap: 20px;
+}
+
+.footer-social a {
+  color: var(--neutral-100);
+  text-decoration: none;
+  font-family: var(--font-family-button);
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.footer-social a:hover {
+  color: var(--primary-300);
+  text-decoration: underline;
+}
+
+.footer-bottom {
+  text-align: center;
+  color: var(--neutral-300);
+  font-family: var(--font-family-button);
+  font-size: 14px;
+}
+
+.footer-logo .logo-icon {
+  margin-right: 12px;
+  color: var(--neutral-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.footer-branding {
+  display: flex;
+  flex-direction: column;
+}
+
+.footer-info p {
+  opacity: 0.9;
+  margin-bottom: var(--space-4);
+  font-size: var(--font-size-md);
+  line-height: 1.6;
+  color: var(--neutral-300);
+}
+
+.footer-nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-5);
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .footer {
+    padding: 40px 0;
+    height: auto;
+  }
+  
+  .footer-container {
+    width: auto;
+    max-width: 90%;
+    padding: 0 20px;
+  }
+  
+  .footer-content {
+    flex-direction: column;
+    gap: 30px;
+    text-align: center;
+  }
+  
+  .footer-nav {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+  }
+  
+  .footer-links,
+  .footer-social {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  .footer-logo .logo-text {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 480px) {
+  .footer {
+    padding: 30px 0;
+  }
+  
+  .footer-container {
+    max-width: 95%;
+    padding: 0 15px;
+  }
+  
+  .footer-links,
+  .footer-social {
+    flex-direction: column;
+    gap: 15px;
+  }
+}

@@ -1,0 +1,357 @@
+/* Modern Component Styles for Octopets
+   This file provides modern, reusable component styles with a pastel aesthetic
+*/
+
+/* Modern Input Styling */
+.modern-input {
+  height: var(--input-height);
+  padding: var(--input-padding);
+  border: var(--input-border);
+  border-radius: var(--input-border-radius);
+  background-color: var(--neutral-100);
+  box-shadow: var(--input-shadow);
+  transition: all var(--transition-normal);
+}
+
+.modern-input:focus {
+  border: var(--input-focus-border);
+  box-shadow: var(--input-focus-shadow);
+  outline: none;
+}
+
+.modern-input::placeholder {
+  color: var(--neutral-500);
+}
+
+/* Floating Label Input */
+.floating-label-group {
+  position: relative;
+  margin-bottom: var(--space-5);
+}
+
+.floating-label-group input {
+  height: var(--input-height);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  width: 100%;
+  border: var(--input-border);
+  border-radius: var(--input-border-radius);
+  background-color: var(--neutral-100);
+  box-shadow: var(--input-shadow);
+  transition: all var(--transition-normal);
+}
+
+.floating-label-group label {
+  position: absolute;
+  top: 50%;
+  left: var(--space-4);
+  transform: translateY(-50%);
+  background-color: transparent;
+  transition: all var(--transition-normal);
+  pointer-events: none;
+  color: var(--neutral-600);
+}
+
+.floating-label-group input:focus,
+.floating-label-group input:not(:placeholder-shown) {
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-1);
+}
+
+.floating-label-group input:focus + label,
+.floating-label-group input:not(:placeholder-shown) + label {
+  top: 25%;
+  font-size: var(--font-size-xs);
+  color: var(--primary-600);
+}
+
+.floating-label-group input:focus {
+  border: var(--input-focus-border);
+  box-shadow: var(--input-focus-shadow);
+  outline: none;
+}
+
+/* Modern Select Dropdown */
+.modern-select {
+  position: relative;
+  height: var(--input-height);
+  padding: var(--input-padding);
+  border: var(--input-border);
+  border-radius: var(--input-border-radius);
+  background-color: var(--neutral-100);
+  box-shadow: var(--input-shadow);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2395a4c1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  background-size: 16px;
+  padding-right: var(--space-8);
+  transition: all var(--transition-normal);
+}
+
+.modern-select:focus {
+  border: var(--input-focus-border);
+  box-shadow: var(--input-focus-shadow);
+  outline: none;
+}
+
+/* Button styles have been moved to Button.css */
+
+/* Modern Cards */
+.card {
+  background-color: var(--neutral-100);
+  border-radius: var(--card-border-radius);
+  padding: var(--card-padding);
+  box-shadow: var(--card-shadow);
+  transition: all var(--transition-normal);
+  border: 1px solid var(--neutral-200);
+}
+
+.card:hover {
+  box-shadow: var(--card-hover-shadow);
+  transform: translateY(-3px);
+  border-color: var(--primary-300);
+}
+
+.card-accent {
+  border-top: 4px solid var(--accent-500);
+}
+
+.card-primary {
+  border-top: 4px solid var(--primary-500);
+}
+
+.card-secondary {
+  border-top: 4px solid var(--secondary-500);
+}
+
+/* Badge */
+.badge {
+  display: inline-block;
+  padding: 0.25em 0.75em;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--border-radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-primary {
+  background-color: var(--primary-100);
+  color: var(--primary-800);
+}
+
+.badge-secondary {
+  background-color: var(--secondary-100);
+  color: var(--secondary-800);
+}
+
+.badge-accent {
+  background-color: var(--accent-100);
+  color: var(--accent-800);
+}
+
+.badge-success {
+  background-color: var(--success-100);
+  color: var(--success-800);
+}
+
+.badge-warning {
+  background-color: var(--warning-100);
+  color: var(--warning-800);
+}
+
+.badge-error {
+  background-color: var(--error-100);
+  color: var(--error-800);
+}
+
+/* Modern Checkboxes */
+.checkbox-container {
+  display: block;
+  position: relative;
+  padding-left: 30px;
+  margin-bottom: var(--space-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-container input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.checkmark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 20px;
+  width: 20px;
+  background-color: var(--neutral-200);
+  border-radius: var(--border-radius-md);
+  transition: all var(--transition-normal);
+}
+
+.checkbox-container:hover input ~ .checkmark {
+  background-color: var(--neutral-300);
+}
+
+.checkbox-container input:checked ~ .checkmark {
+  background-color: var(--primary-600);
+}
+
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+}
+
+.checkbox-container input:checked ~ .checkmark:after {
+  display: block;
+}
+
+.checkbox-container .checkmark:after {
+  left: 7px;
+  top: 3px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--neutral-300);
+  transition: var(--transition-normal);
+  border-radius: var(--border-radius-full);
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: var(--transition-normal);
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: var(--primary-600);
+}
+
+input:focus + .slider {
+  box-shadow: var(--input-focus-shadow);
+}
+
+input:checked + .slider:before {
+  transform: translateX(24px);
+}
+
+/* Pill Navigation */
+.pill-nav {
+  display: flex;
+  padding: var(--space-1);
+  background-color: var(--neutral-200);
+  border-radius: var(--border-radius-full);
+  margin-bottom: var(--space-5);
+}
+
+.pill-nav-item {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--border-radius-full);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  text-align: center;
+  flex: 1;
+}
+
+.pill-nav-item.active {
+  background-color: var(--neutral-100);
+  color: var(--primary-700);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Avatar */
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--primary-100);
+  color: var(--primary-700);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-sm {
+  width: 32px;
+  height: 32px;
+  font-size: var(--font-size-xs);
+}
+
+.avatar-lg {
+  width: 64px;
+  height: 64px;
+  font-size: var(--font-size-xl);
+}
+
+/* Utilities */
+.text-gradient {
+  background: var(--gradient-pastel-mix);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+.shadow-hover {
+  transition: all var(--transition-normal);
+}
+
+.shadow-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}
+
+.glass-morphism {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--border-radius-lg);
+}

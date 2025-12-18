@@ -1,0 +1,47 @@
+.floating-pet-icons-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.floating-pet-icon {
+  animation: float 15s ease-in-out infinite alternate;
+  /* Ensure we can see the icons over the gradient background */
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.5));
+}
+
+@keyframes float {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(var(--scale, 1));
+  }
+  25% {
+    transform: translate(15px, 15px) rotate(5deg) scale(var(--scale, 1));
+  }
+  50% {
+    transform: translate(-10px, 20px) rotate(-3deg) scale(var(--scale, 1));
+  }
+  75% {
+    transform: translate(10px, -15px) rotate(2deg) scale(var(--scale, 1));
+  }
+  100% {
+    transform: translate(-15px, -20px) rotate(-5deg) scale(var(--scale, 1));
+  }
+}
+
+/* For smaller screens, show fewer icons and make them smaller */
+@media (max-width: 768px) {
+  .floating-pet-icon {
+    transform: scale(0.8);
+  }
+}
+
+@media (max-width: 480px) {
+  .floating-pet-icon {
+    transform: scale(0.6);
+  }
+}
