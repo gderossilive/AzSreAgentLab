@@ -161,7 +161,7 @@ source scripts/load-env.sh
 az containerapp update \
   -n octopetsapi \
   -g rg-octopets-lab \
-  --set-env-vars "ERRORS=true"
+  --set-env-vars "MEMORY_ERRORS=true"
 
 # Wait for container restart (30-60 seconds)
 echo "Waiting for container to restart..."
@@ -319,11 +319,11 @@ echo "GitHub Repository: https://github.com/<your-org>/<your-repo>/issues"
 ### Stop Memory Leak
 
 ```bash
-# Disable ERRORS flag
+# Disable MEMORY_ERRORS flag
 az containerapp update \
   -n octopetsapi \
   -g rg-octopets-lab \
-  --set-env-vars "ERRORS=false"
+  --set-env-vars "MEMORY_ERRORS=false"
 
 # Restart to clear memory
 az containerapp update \
@@ -388,7 +388,7 @@ az monitor metrics alert show \
 **Solutions**:
 - Trigger more memory leak traffic (click "View Details" 10+ times)
 - Wait for full 5-minute evaluation window
-- Verify ERRORS=true environment variable is set
+- Verify MEMORY_ERRORS=true environment variable is set
 
 ### ServiceNow Incident Not Created
 

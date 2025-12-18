@@ -130,10 +130,10 @@ az acr build -r $ACR_NAME -t $IMAGE:$TAG -f path/to/Dockerfile .
 scripts/50-deploy-alert-rules.sh
 
 # Trigger demo memory leak
-az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "ERRORS=true"
+az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "MEMORY_ERRORS=true"
 
 # Disable after testing
-az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "ERRORS=false"
+az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "MEMORY_ERRORS=false"
 ```
 
 ### AzureHealthCheck Demo Testing

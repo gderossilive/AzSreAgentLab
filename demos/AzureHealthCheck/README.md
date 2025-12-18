@@ -158,7 +158,7 @@ This demo showcases an **autonomous Azure SRE Agent** that monitors Azure resour
      - Every 12 hours: `0 */12 * * *`
      - Daily at 9 AM UTC: `0 9 * * *`
    - **Mode**: `Autonomous`
-   - **TaskDetails**: 
+   - **Task details**: 
      ```
      Monitor Azure resources (Container Apps, VMs, AKS, App Service) for anomalies. 
      Analyze 24-hour metrics (CPU, memory, errors, cost) using MAD/z-score ≥3 detection. 
@@ -220,7 +220,7 @@ To test anomaly detection, you can temporarily stress an Azure resource:
 az containerapp update \
   -n octopetsapi \
   -g rg-octopets-lab \
-  --set-env-vars "ERRORS=true"
+  --set-env-vars "MEMORY_ERRORS=true"
 
 # Generate traffic to trigger memory increase
 ./scripts/60-generate-traffic.sh 15
@@ -230,7 +230,7 @@ az containerapp update \
 az containerapp update \
   -n octopetsapi \
   -g rg-octopets-lab \
-  --set-env-vars "ERRORS=false"
+  --set-env-vars "MEMORY_ERRORS=false"
 ```
 
 ## Expected Behavior
