@@ -1,0 +1,84 @@
+From 0f06471a7b6e7ef02bd4bcf0d9a262d2c258e44e Mon Sep 17 00:00:00 2001
+From: GitHub Copilot <copilot@github.com>
+Date: Thu, 18 Dec 2025 17:37:21 +0000
+Subject: [PATCH] Fix EF Core ValueComparer and HTTPS redirection issues
+
+- Add ValueComparer for AllowedPets, Amenities, and Photos properties
+  to eliminate EF Core performance warnings and reduce CPU overhead
+- Conditionally apply HTTPS redirection only when HTTPS is configured
+  to prevent unnecessary overhead in HTTP-only environments
+
+Addresses incident INC0010012 - High CPU usage on Octopets API
+---
+ backend/Data/AppDbContext.cs | 21 ++++++++++++++++++---
+ backend/Program.cs           |  8 +++++++-
+ 2 files changed, 25 insertions(+), 4 deletions(-)
+
+diff --git a/backend/Data/AppDbContext.cs b/backend/Data/AppDbContext.cs
+index 74998e3..b4bd6ce 100644
+--- a/backend/Data/AppDbContext.cs
++++ b/backend/Data/AppDbContext.cs
+@@ -1,4 +1,5 @@
+ using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.ChangeTracking;
+ using Octopets.Backend.Models;
+ using System.Text.Json;
+ 
+@@ -23,18 +24,32 @@ public class AppDbContext : DbContext
+             .WithMany(l => l.Reviews)
+             .HasForeignKey(r => r.ListingId);
+ 
+-        // Configure JSON serialization for List properties
++        // Configure JSON serialization for List properties with ValueComparer
++        var stringListComparer = new ValueComparer<List<string>>(
++            (l1, l2) => (l1 == null && l2 == null) || (l1 != null && l2 != null && l1.SequenceEqual(l2)),
++            l => l.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
++            l => l.ToList());
++
+         modelBuilder.Entity<Listing>()
+             .Property(l => l.AllowedPets)
+             .HasConversion(
+                 v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null!),
+-                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null!)!);
++                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null!)!)
++            .Metadata.SetValueComparer(stringListComparer);
+ 
+         modelBuilder.Entity<Listing>()
+             .Property(l => l.Amenities)
+             .HasConversion(
+                 v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null!),
+-                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null!)!);
++                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null!)!)
++            .Metadata.SetValueComparer(stringListComparer);
++
++        modelBuilder.Entity<Listing>()
++            .Property(l => l.Photos)
++            .HasConversion(
++                v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null!),
++                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null!)!)
++            .Metadata.SetValueComparer(stringListComparer);
+ 
+         // Seed data
+         SeedData(modelBuilder);
+diff --git a/backend/Program.cs b/backend/Program.cs
+index 79dc26d..a66ce2f 100644
+--- a/backend/Program.cs
++++ b/backend/Program.cs
+@@ -55,7 +55,13 @@ if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("EnableS
+     app.MapScalarApiReference();
+ }
+ 
+-app.UseHttpsRedirection();
++// Only use HTTPS redirection when HTTPS is actually configured
++var aspnetcoreUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
++if (!string.IsNullOrEmpty(aspnetcoreUrls) && aspnetcoreUrls.Contains("https", StringComparison.OrdinalIgnoreCase))
++{
++    app.UseHttpsRedirection();
++}
++
+ app.UseCors();
+ 
+ try
+-- 
+2.52.0
+
