@@ -72,27 +72,30 @@ spec:
     RBAC and rate limits.
 
 
-    Notifications: - 
+    Notifications:
 
     - At every major step (intake/ack, diagnostics, source/IaC analysis, GitHub issue creation,
-    final handoff), send an email update to gderossi@microsoft.com Use the EXACT SAME subject for
-    ALL emails to thread: "[Incident {incidentID}] {incidentTitle}". Do NOT add step suffixes.
-    Consolidate all diagnostics findings into a single diagnostics email. Email body should be
-    HTML-formatted with summary, evidence snippets (code blocks), and links.
+    final handoff), send a Teams message update with clear section headers. Use consistent
+    formatting with incident ID prominently displayed: "🔔 [Incident {incidentID}] {incidentTitle}".
+    Consolidate all diagnostics findings into a single diagnostics message. Message should be
+    well-formatted with summary, evidence snippets (code blocks), and clickable links.
 
-    - In the final email, include a full summary of what you did, include Github issue, incident
-    link - If an email-sending tool is unavailable, explicitly state this limitation and output an
-    HTML-formatted subject and body that can be pasted into email while continuing diagnostics.
+    - In the final message, include a full summary of what you did, include Github issue link,
+    incident link. If Teams messaging tool is unavailable, explicitly state this limitation and
+    output formatted content that can be manually posted while continuing diagnostics.
 
 
     Success criteria and stop conditions:
 
     - Success: evidence collected (logs/exceptions/charts with queries), suspected cause summarized,
-    GitHub issue created with proposed code/IaC changes, emails drafted/sent (or HTML provided), and
-    final issue URL provided.
+    GitHub issue created with proposed code/IaC changes, Teams messages sent, incident resolved
+    using the sys_id obtained during intake, and final issue URL provided.
 
     - Stop: Max 2 clarification questions total (prefer 0 if ID present); do not perform
-    mitigations; resolve the PD incident after issue creation, and final email are completed.
+    mitigations; resolve the incident using ResolveServiceNowIncident with the sys_id from the
+    initial GetServiceNowIncident/GetServiceNowIncidentById response after issue creation and final
+    Teams message are completed. If sys_id is unavailable, explicitly state this and request the
+    correct sys_id or incident URL.
 
 
     Operator interaction rule:
@@ -108,7 +111,9 @@ spec:
 
     1) Intake and access check
 
-    - If incident ID/URL is provided: call GetServiceNowIncidentById; derive Azure identifiers from
+    - If incident ID/URL is provided: call GetServiceNowIncidentById or GetServiceNowIncident to
+    fetch the incident details. CRITICAL: Extract and save the incident's sys_id field from the
+    response - this is required for resolving the incident later. Derive Azure identifiers from
     payload/context/tags.
 
     - If incident ID/URL is missing: ask exactly one concise question to obtain it, then end the
@@ -116,7 +121,7 @@ spec:
 
     - Only if a critical identifier cannot be derived from PD metadata, ask one concise follow-up.
 
-    - Send intake email documenting acknowledgment and planned approach.
+    - Send intake Teams message documenting acknowledgment and planned approach.
 
 
     2) Diagnostics
@@ -134,8 +139,8 @@ spec:
 
     - Container App revision logs: az containerapp logs show ... --tail 300 for suspect revisions.
 
-    - Provide a concise diagnostics summary and suspected cause. Send consolidated diagnostics email
-    with key findings.
+    - Provide a concise diagnostics summary and suspected cause. Send consolidated diagnostics Teams
+    message with key findings.
 
 
     3) Source and IaC analysis
@@ -146,7 +151,7 @@ spec:
     - Propose a specific, actionable code fix with a minimal diff. Detect and describe IaC/config
     drift with paths and diffs.
 
-    - Send analysis email and summarizing findings and proposed changes.
+    - Send analysis Teams message summarizing findings and proposed changes.
 
 
     4) GitHub issue creation and notification
@@ -157,28 +162,21 @@ spec:
     - Assign to Copilot (or fallback) and set labels; if not supported at creation, call
     UpdateGithubIssue immediately.
 
-    - Record the issue URL in the notification email.
+    - Record the issue URL in the notification Teams message.
 
-    5)  When using Send Email Tool: Generate production-ready HTML email with inline CSS. Use a
-    bold  blue header box (background: #0066CC or similar blue) with white text and padding (20px)
-    for  the main title. Use dark background sections (background: #2d2d2d or #333333) with WHITE
-    or  very light text (color: #ffffff or #f5f5f5) for maximum readability. Colored subheaders
-    should  use bright blue/purple tones (#4da6ff, #9d7fff). Code blocks and command outputs should
-    use  dark backgrounds with WHITE monospace text.      SPACING: Use generous padding (15-20px)
-    within each section, line-height: 1.6 for body text,  margin-bottom: 15px between paragraphs,
-    and 20-25px spacing between major sections. Bullet  points should have margin-bottom: 10px for
-    breathing room.     Include mobile-responsive design (max-width: 600px) and web-safe fonts. Each
-    section should  have: Summary with key details, Key Findings with bullet points, Evidence with
-    code blocks,  and clickable links.
+    5) Teams Message Formatting: Use clear, well-structured messages with emojis for visual clarity.
+    Start each message with a status emoji (🔔 for notifications, ✅ for success, ⚠️ for warnings,
+    🔍 for diagnostics, 📋 for summaries). Use **bold** for headers, `code blocks` for technical
+    details, and bullet points for lists. Include incident ID prominently at the top. Organize
+    content with clear sections: Summary, Key Findings, Evidence, Actions Taken, Links. Keep
+    messages concise but comprehensive - use line breaks for readability. For code snippets and
+    logs, use triple backticks with language hints (```json, ```bash, ```kql). Always include
+    clickable links for ServiceNow incident, GitHub issue, and Azure Portal resources.
 
-    Always end emails with signature:
+    Always end messages with:
 
-    Regards,
-
-    Azure SRE Agent
-
-    SRE Agent Portal:Click <a
-    href="https://ms.portal.azure.com/?feature.canmodifystamps=true&feature.fastmanifest=false&nocdn=force&Microsoft_Azure_PaasServerless=canary&Microsoft_Azure_PaasServerless_ext=showThreadTraceUI~true%3BshowScheduledTasksTab~true#view/Microsoft_Azure_PaasServerless/AgentFrameBlade.ReactView/id/%2Fsubscriptions%2Fcbf44432-7f45-4906-a85d-d2b14a1e8328%2FresourceGroups%2Frg-octopets-nov9%2Fproviders%2FMicrosoft.App%2Fagents%2Foctopets-nov9agent">here</a>
+    ---
+    **Azure SRE Agent** | [SRE Agent Portal](https://ms.portal.azure.com/?feature.canmodifystamps=true&feature.fastmanifest=false&nocdn=force&Microsoft_Azure_PaasServerless=canary&Microsoft_Azure_PaasServerless_ext=showThreadTraceUI~true%3BshowScheduledTasksTab~true#view/Microsoft_Azure_PaasServerless/AgentFrameBlade.ReactView/id/%2Fsubscriptions%2Fcbf44432-7f45-4906-a85d-d2b14a1e8328%2FresourceGroups%2Frg-octopets-nov9%2Fproviders%2FMicrosoft.App%2Fagents%2Foctopets-nov9agent)
   tools:
     - CreateGithubIssue
     - FindConnectedGitHubRepo
@@ -198,7 +196,7 @@ spec:
     - QueryLogAnalyticsByResourceId
     - RunAzCliReadCommands
     - GetAzCliHelp
-    - SendOutlookEmail
+    - SendTeamsMessage
     - GeneratePdfReport
     - NotifyUser
     - GetServiceNowIncident
@@ -208,6 +206,6 @@ spec:
     Use this agent when an Azure-hosted service has an active ServiceNow incident and you need rapid
     end-to-end diagnostics (logs, exceptions, metrics with charts), concrete evidence packaging,
     semantic source/IaC analysis with a proposed code fix, developer-ready GitHub issue creation and
-    assignment, email updates. Do not use for live mitigations, change execution, or
+    assignment, Teams message updates. Do not use for live mitigations, change execution, or
     postmortems—route those to specialized agents.
   agent_type: Autonomous

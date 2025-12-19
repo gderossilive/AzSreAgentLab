@@ -186,12 +186,12 @@ The original Octopets Dockerfiles were modified to work with the project root as
 The lab includes an optional demo that showcases automated incident management with ServiceNow:
 
 **What it demonstrates:**
-- Azure Monitor detects memory leak in Octopets backend
+- Azure Monitor detects memory leak or CPU stress in Octopets backend
 - ServiceNow incident automatically created via webhook
 - SRE Agent investigates using Log Analytics and metrics
 - GitHub issue created with root cause analysis
 - ServiceNow incident updated with resolution details
-- Email notifications sent to stakeholders
+- Microsoft Teams notifications sent to channels
 
 **Quick Start:**
 ```bash
@@ -215,9 +215,9 @@ scripts/50-deploy-alert-rules.sh
 ```
 
 **Components:**
-- **4 Azure Monitor Alert Rules**: Memory (80%, 90%) and error rate (10, 50 per min) thresholds
+- **5 Azure Monitor Alert Rules**: Memory (80%, 90%), CPU (70%), and error rate (10, 50 per min) thresholds
 - **ServiceNow Action Group**: Webhook integration for incident creation
-- **SRE Agent Subagent**: Automated investigation and remediation workflow
+- **SRE Agent Subagent**: Automated investigation and remediation workflow with Teams notifications
 - **Expected Duration**: 5-15 minutes end-to-end
 
 **Documentation:**
@@ -225,6 +225,54 @@ scripts/50-deploy-alert-rules.sh
 - **Full Specification**: [specs/IncidentAutomationServiceNow.md](specs/IncidentAutomationServiceNow.md)
 - **Subagent YAML**: [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml)
 - **Alert Rules**: [demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep](demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep)
+
+### Testing Scenarios
+
+The Octopets backend supports two independent stress testing scenarios:
+
+**Memory Stress Testing** (allocates 1GB memory):
+```bash
+# Enable memory stress
+./scripts/63-enable-memory-errors.sh
+
+# Generate traffic to trigger allocation
+./scripts/60-generate-traffic.sh 20
+
+# Disable after testing
+./scripts/64-disable-memory-errors.sh
+```
+
+**CPU Stress Testing** (burns CPU for 500ms per request):
+```bash
+# Enable CPU stress
+./scripts/61-enable-cpu-stress.sh
+
+# Generate traffic to trigger CPU burn
+./scripts/60-generate-traffic.sh 50
+
+# Disable after testing
+./scripts/62-disable-cpu-stress.sh
+```
+
+**Combined Testing** (both scenarios simultaneously):
+```bash
+# Enable both flags
+./scripts/63-enable-memory-errors.sh
+./scripts/61-enable-cpu-stress.sh
+
+# Generate traffic
+./scripts/60-generate-traffic.sh 30
+
+# Disable both
+./scripts/64-disable-memory-errors.sh
+./scripts/62-disable-cpu-stress.sh
+```
+
+These scenarios are useful for:
+- Testing Azure Monitor alert rules
+- Validating SRE Agent anomaly detection
+- Demonstrating auto-remediation workflows
+- Training on incident response
 
 ## 🏥 Azure Health Check Demo
 

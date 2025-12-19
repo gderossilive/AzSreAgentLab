@@ -5,7 +5,7 @@
 This is an Azure SRE Agent lab environment that deploys a sample application (Octopets) and configures Azure SRE Agent with scoped permissions. The lab runs entirely in a dev container without Docker Desktop.
 
 **Included Demos**:
-1. **ServiceNow Incident Automation** (`demos/ServiceNowAzureResourceHandler/`): End-to-end automated incident response (Azure Monitor → ServiceNow → SRE Agent → GitHub → Email)
+1. **ServiceNow Incident Automation** (`demos/ServiceNowAzureResourceHandler/`): End-to-end automated incident response (Azure Monitor → ServiceNow → SRE Agent → GitHub → Teams)
 2. **Azure Health Check** (`demos/AzureHealthCheck/`): Scheduled autonomous monitoring with statistical anomaly detection, cost tracking, Azure Advisor integration, and Microsoft Teams notifications via Adaptive Cards
 
 ## Key Technologies
@@ -98,6 +98,11 @@ Required only for incident automation demo:
 Required only for health monitoring demo:
 - `TEAMS_WEBHOOK_URL` - Power Automate workflow webhook URL (quoted, contains & characters)
 
+### Testing Environment Variables
+For stress testing scenarios (both demos):
+- `MEMORY_ERRORS` - When "true", allocates 1GB memory per API request (default: not set/false)
+- `CPU_STRESS` - When "true", burns CPU for 500ms per API request (default: not set/false)
+
 ## Common Patterns
 
 ### Loading Environment
@@ -129,11 +134,17 @@ az acr build -r $ACR_NAME -t $IMAGE:$TAG -f path/to/Dockerfile .
 # Deploy alert rules with ServiceNow integration
 scripts/50-deploy-alert-rules.sh
 
+# Deploy CPU alert rule (optional - for CPU stress testing)
+scripts/65-deploy-cpu-alert.sh
+
 # Trigger demo memory leak
-az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "MEMORY_ERRORS=true"
+scripts/63-enable-memory-errors.sh
+
+# Generate traffic to trigger alerts
+scripts/60-generate-traffic.sh 20
 
 # Disable after testing
-az containerapp update -n octopetsapi -g rg-octopets-lab --set-env-vars "MEMORY_ERRORS=false"
+scripts/64-disable-memory-errors.sh
 ```
 
 ### AzureHealthCheck Demo Testing
@@ -150,6 +161,26 @@ scripts/71-send-sample-anomaly.sh
 
 # Configure Teams connector in SRE Agent portal
 # Connectors → Add Microsoft Teams → Use TEAMS_WEBHOOK_URL from .env
+```
+
+### Stress Testing Patterns
+```bash
+# Memory stress (allocates 1GB per request)
+scripts/63-enable-memory-errors.sh
+scripts/60-generate-traffic.sh 20
+scripts/64-disable-memory-errors.sh
+
+# CPU stress (burns 500ms per request)
+scripts/61-enable-cpu-stress.sh
+scripts/60-generate-traffic.sh 50
+scripts/62-disable-cpu-stress.sh
+
+# Combined stress (both scenarios)
+scripts/63-enable-memory-errors.sh
+scripts/61-enable-cpu-stress.sh
+scripts/60-generate-traffic.sh 30
+scripts/64-disable-memory-errors.sh
+scripts/62-disable-cpu-stress.sh
 ```
 
 ## Security Best Practices

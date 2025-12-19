@@ -44,10 +44,12 @@ FE_URLS=(
 )
 
 # API endpoints to generate backend load
+# These endpoints trigger MEMORY_ERRORS and CPU_STRESS when enabled
 API_URLS=(
-    "/api/products"
-    "/api/products/1"
-    "/api/products/2"
+    "/api/listings"
+    "/api/listings/1"
+    "/api/listings/2"
+    "/api/listings/3"
 )
 
 while true; do
