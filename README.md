@@ -107,7 +107,7 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
 │   ├── specs.md           # Complete lab specification
 │   └── IncidentAutomationServiceNow.md  # ServiceNow demo spec
 ├── scripts/
-│   ├── 10-clone-repos.sh  # Clone reference repositories
+│   ├── 10-clone-repos.sh  # Bootstrap external repos (optional)
 │   ├── 20-az-login.sh     # Azure authentication
 │   ├── 30-deploy-octopets.sh        # Deploy infrastructure
 │   ├── 31-deploy-octopets-containers.sh  # Build & deploy containers
@@ -127,6 +127,16 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
     ├── octopets/          # Octopets sample app
     └── sre-agent/         # SRE Agent reference repo
 ```
+
+### External repositories (vendored copies)
+
+The directories under `external/` are **vendored snapshots** of upstream GitHub repositories.
+
+- They are **not** Git submodules (no `.gitmodules`), and the vendored folders typically do **not** contain a `.git/` directory.
+- Each vendored repo includes an `ORIGIN.md` documenting the upstream URL and why it was copied (and, for Octopets, what was modified).
+- Updating a vendored repo is a manual process (re-vendor a pinned upstream ref and apply any lab-specific changes).
+
+`scripts/10-clone-repos.sh` is provided as a convenience for fresh workspaces: it clones the upstream repos into `external/` only if the target directory does not already exist. In this repo, `external/` is already present and tracked in Git.
 
 ## 🔧 Configuration
 
