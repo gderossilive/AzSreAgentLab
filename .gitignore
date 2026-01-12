@@ -1,2 +1,5 @@
 .env
 **/.azure/
+
+# Instance-specific project memory (do not commit)
+.docs/memory.md

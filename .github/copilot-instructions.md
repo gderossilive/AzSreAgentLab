@@ -1,203 +1,24 @@
-# GitHub Copilot Instructions - Azure SRE Agent Lab
+# Copilot Instructions — AzSreAgentLab (Project Constitution)
 
-## Project Context
+## Constitution (always true for this repo)
+- Purpose: Lab environment to deploy Octopets + Azure SRE Agent (Preview) and run demos (ServiceNow incident automation, scheduled health checks).
+- Environment: VS Code devcontainer on Linux; do not assume local Docker.
+- Builds: Use ACR remote builds (`az acr build`) when building containers; use repo root as build context.
+- IaC: Prefer Bicep; use correct deployment scope (subscription vs resource group).
+- Region: Default/expected region is `swedencentral` (SRE Agent preview region constraint).
+- Security: Least privilege always; never grant subscription-wide permissions to the agent; scope RBAC to target resource group(s) only.
+- Secrets: Never commit `.env` or secrets.
+- Vendored sources: `external/` is vendored reference content; treat as read-only unless explicitly asked to re-vendor/update.
 
-This is an Azure SRE Agent lab environment that deploys a sample application (Octopets) and configures Azure SRE Agent with scoped permissions. The lab runs entirely in a dev container without Docker Desktop.
+## Project Memory (per-instance state)
+- Use `.docs/memory.md` as the instance-specific memory (deployment state, RG names, URLs, connector notes, known issues, next steps).
+- `.docs/memory.md` is gitignored and should not be committed.
+- Before doing work: read `.docs/memory.md`.
+- After making decisions/deployments: update `.docs/memory.md`.
 
-**Included Demos**:
-1. **ServiceNow Incident Automation** (`demos/ServiceNowAzureResourceHandler/`): End-to-end automated incident response (Azure Monitor → ServiceNow → SRE Agent → GitHub → Teams)
-2. **Azure Health Check** (`demos/AzureHealthCheck/`): Scheduled autonomous monitoring with statistical anomaly detection, cost tracking, Azure Advisor integration, and Microsoft Teams notifications via Adaptive Cards
-
-## Key Technologies
-
-- **Azure Services**: Container Apps, Container Registry, SRE Agent (Preview), Log Analytics, Application Insights
-- **Languages**: Bash (scripts), Bicep (IaC), TypeScript/React (frontend), C#/.NET 9 (backend)
-- **Tools**: Azure CLI, Azure Developer CLI (azd), .NET SDK 9, Node.js 20
-- **Region**: Sweden Central (swedencentral)
-
-## Architecture Patterns
-
-### Deployment Strategy
-- **Infrastructure**: Bicep templates deployed at subscription scope
-- **Container Builds**: Remote builds via Azure Container Registry Tasks (no local Docker)
-- **RBAC**: Managed identity with High access scoped to single resource group only
-
-### File Organization
-```
-scripts/        # Deployment automation (bash)
-specs/          # Lab specifications (markdown)
-demos/          # Demo use cases
-  ServiceNowAzureResourceHandler/  # ServiceNow incident automation
-  AzureHealthCheck/                # Scheduled health monitoring with Teams
-external/       # Cloned reference repositories
-.env            # Environment configuration (gitignored)
-.env.example    # Template for .env
-```
-
-## Coding Guidelines
-
-### Bash Scripts
-- Use `set -euo pipefail` for safety
-- Validate required environment variables with `${VAR:?Missing VAR}`
-- Include usage comments at script header
-- Use absolute paths when working across directories
-- Echo status messages for user visibility
-
-Example:
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Deploy infrastructure
-: "${AZURE_SUBSCRIPTION_ID:?Missing AZURE_SUBSCRIPTION_ID}"
-echo "Deploying to subscription: $AZURE_SUBSCRIPTION_ID"
-```
-
-### Bicep Templates
-- Use subscription scope for deployments that create resource groups
-- Parameterize location, environment name, and tags
-- Include descriptive comments for complex resources
-- Follow Azure naming conventions (e.g., `rg-`, `cae-`, `law-`)
-
-### Docker Considerations
-- **Build context**: Always use project root, not subdirectories
-- **COPY paths**: Reference subdirectories explicitly (e.g., `COPY backend/ ./backend`)
-- **ACR builds**: Use `az acr build` with `-f` for Dockerfile path and `.` for root context
-
-Example:
-```bash
-cd /workspaces/AzSreAgentLab/external/octopets
-az acr build -r $ACR_NAME -t $IMAGE_TAG -f backend/Dockerfile .
-```
-
-## Environment Variables
-
-### Required Variables
-Always validate these exist before deployment:
-- `AZURE_TENANT_ID` - Azure AD tenant
-- `AZURE_SUBSCRIPTION_ID` - Target subscription
-- `AZURE_LOCATION` - Deployment region (swedencentral)
-- `OCTOPETS_ENV_NAME` - Environment name for resource naming
-
-### Auto-populated Variables
-These are set by deployment scripts:
-- `OCTOPETS_RG_NAME` - Resource group created by deployment
-- `OCTOPETS_API_URL` - Backend container app URL
-- `OCTOPETS_FE_URL` - Frontend container app URL
-- `SRE_AGENT_TARGET_RESOURCE_GROUPS` - Scoped access for agent
-- `SERVICENOW_WEBHOOK_URL` - Auto-populated after alert deployment
-
-### ServiceNow Demo Variables (Optional)
-Required only for incident automation demo:
-- `SERVICENOW_INSTANCE` - ServiceNow instance prefix (e.g., dev12345)
-- `SERVICENOW_USERNAME` - ServiceNow admin username
-- `SERVICENOW_PASSWORD` - ServiceNow admin password
-- `INCIDENT_NOTIFICATION_EMAIL` - Email for notifications
-
-### AzureHealthCheck Demo Variables (Optional)
-Required only for health monitoring demo:
-- `TEAMS_WEBHOOK_URL` - Power Automate workflow webhook URL (quoted, contains & characters)
-
-### Testing Environment Variables
-For stress testing scenarios (both demos):
-- `MEMORY_ERRORS` - When "true", allocates 1GB memory per API request (default: not set/false)
-- `CPU_STRESS` - When "true", burns CPU for 500ms per API request (default: not set/false)
-
-## Common Patterns
-
-### Loading Environment
-```bash
-source scripts/load-env.sh
-```
-
-### Updating .env Values
-```bash
-scripts/set-dotenv-value.sh "KEY_NAME" "value"
-```
-
-### Azure CLI Authentication
-```bash
-az account show >/dev/null 2>&1 || {
-  echo "ERROR: Not logged in. Run scripts/20-az-login.sh" >&2
-  exit 1
-}
-```
-
-### ACR Remote Build
-```bash
-cd /path/to/project/root
-az acr build -r $ACR_NAME -t $IMAGE:$TAG -f path/to/Dockerfile .
-```
-
-### ServiceNow Demo Deployment
-```bash
-# Deploy alert rules with ServiceNow integration
-scripts/50-deploy-alert-rules.sh
-
-# Deploy CPU alert rule (optional - for CPU stress testing)
-scripts/65-deploy-cpu-alert.sh
-
-# Trigger demo memory leak
-scripts/63-enable-memory-errors.sh
-
-# Generate traffic to trigger alerts
-scripts/60-generate-traffic.sh 20
-
-# Disable after testing
-scripts/64-disable-memory-errors.sh
-```
-
-### AzureHealthCheck Demo Testing
-```bash
-# Test Teams webhook connectivity
-scripts/70-test-teams-webhook.sh
-
-# Send sample anomaly alert
-scripts/71-send-sample-anomaly.sh
-
-# Upload subagent to Azure Portal
-# File: demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml
-# Trigger: Scheduled (cron: 0 */6 * * * for every 6 hours)
-
-# Configure Teams connector in SRE Agent portal
-# Connectors → Add Microsoft Teams → Use TEAMS_WEBHOOK_URL from .env
-```
-
-### Stress Testing Patterns
-```bash
-# Memory stress (allocates 1GB per request)
-scripts/63-enable-memory-errors.sh
-scripts/60-generate-traffic.sh 20
-scripts/64-disable-memory-errors.sh
-
-# CPU stress (burns 500ms per request)
-scripts/61-enable-cpu-stress.sh
-scripts/60-generate-traffic.sh 50
-scripts/62-disable-cpu-stress.sh
-
-# Combined stress (both scenarios)
-scripts/63-enable-memory-errors.sh
-scripts/61-enable-cpu-stress.sh
-scripts/60-generate-traffic.sh 30
-scripts/64-disable-memory-errors.sh
-scripts/62-disable-cpu-stress.sh
-```
-
-## Security Best Practices
-
-### RBAC Scoping
-- Never grant subscription-wide permissions to SRE Agent
-- Always scope to specific resource groups via `SRE_AGENT_TARGET_RESOURCE_GROUPS`
-- Use managed identities, not service principals with keys
-
-### Secrets Management
-- Never commit `.env` file (in .gitignore)
-- Use Azure CLI/azd authentication, not hardcoded credentials
-- Store sensitive values only in Azure Key Vault or managed identities
-
-## Troubleshooting Hints
-
-### Common Issues
+## Coding Defaults
+- Bash: use `set -euo pipefail`, validate required env vars (`: "${VAR:?Missing VAR}"`), print progress.
+- Keep changes minimal: implement only what the user asked; avoid unrelated refactors.
 1. **"Please run 'az login'"** → Authentication expired, run `scripts/20-az-login.sh`
 2. **"Docker daemon not running"** → Use ACR Tasks instead: `az acr build`
 3. **"COPY failed: forbidden path"** → Build context is wrong, use project root
