@@ -3,3 +3,6 @@
 
 # Instance-specific project memory (do not commit)
 .docs/memory.md
+
+# Instance-specific working memory (do not commit)
+memory.md
