@@ -22,6 +22,13 @@ This lab deploys:
    - Adaptive Card alerts sent to Microsoft Teams
    - See [Health Check Demo](#-azure-health-check-demo) for details
 
+### Demo → scripts map
+
+| Demo | Demo folder | Key config files | Related scripts (run order) |
+|---|---|---|---|
+| Azure Health Check (scheduled anomaly detection → Teams) | [demos/AzureHealthCheck/](demos/AzureHealthCheck/) | [demos/AzureHealthCheck/README.md](demos/AzureHealthCheck/README.md), [demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml](demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml) | [scripts/70-test-teams-webhook.sh](scripts/70-test-teams-webhook.sh) → [scripts/71-send-sample-anomaly.sh](scripts/71-send-sample-anomaly.sh) → (optional) [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) |
+| ServiceNow Incident Automation (Azure Monitor alerts → ServiceNow incident → SRE Agent subagent) | [demos/ServiceNowAzureResourceHandler/](demos/ServiceNowAzureResourceHandler/) | [demos/ServiceNowAzureResourceHandler/README.md](demos/ServiceNowAzureResourceHandler/README.md), [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml), [demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep](demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep), [demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep](demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep) | [scripts/50-deploy-logic-app.sh](scripts/50-deploy-logic-app.sh) → [scripts/50-deploy-alert-rules.sh](scripts/50-deploy-alert-rules.sh) → [scripts/63-enable-memory-errors.sh](scripts/63-enable-memory-errors.sh) (or [scripts/61-enable-cpu-stress.sh](scripts/61-enable-cpu-stress.sh)) → [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) → verify with [scripts/61-check-memory.sh](scripts/61-check-memory.sh) → cleanup: [scripts/64-disable-memory-errors.sh](scripts/64-disable-memory-errors.sh) / [scripts/62-disable-cpu-stress.sh](scripts/62-disable-cpu-stress.sh) |
+
 ## 📋 Architecture
 
 ```
@@ -147,8 +154,9 @@ Then follow the same happy-path deployment sequence above.
 
 7. **[Optional] Deploy ServiceNow Integration Demo**
    ```bash
-   # See demo/README.md for complete instructions
+   # See demos/ServiceNowAzureResourceHandler/README.md for complete instructions
    # Requires ServiceNow developer instance and credentials in .env
+   scripts/50-deploy-logic-app.sh
    scripts/50-deploy-alert-rules.sh
    ```
 
@@ -182,6 +190,15 @@ Then follow the same happy-path deployment sequence above.
     ├── octopets/          # Octopets sample app
     └── sre-agent/         # SRE Agent reference repo
 ```
+
+## 🤖 Copilot prompts
+
+Reusable prompt templates live under [.github/prompts/](.github/prompts/).
+
+- Project setup: [.github/prompts/ProjectSetup.prompt.md](.github/prompts/ProjectSetup.prompt.md)
+- Azure Health Check demo setup: [.github/prompts/AzureHealthCheckSetup.prompt.md](.github/prompts/AzureHealthCheckSetup.prompt.md)
+- ServiceNow demo setup: [.github/prompts/ServiceNowAzureResourceHandlerSetup.prompt.md](.github/prompts/ServiceNowAzureResourceHandlerSetup.prompt.md)
+- Instance memory setup: [.github/prompts/MemorySetup.prompt.md](.github/prompts/MemorySetup.prompt.md)
 
 ### External repositories (vendored copies)
 
@@ -269,7 +286,10 @@ scripts/set-dotenv-value.sh "SERVICENOW_USERNAME" "admin"
 scripts/set-dotenv-value.sh "SERVICENOW_PASSWORD" "your-password"
 scripts/set-dotenv-value.sh "INCIDENT_NOTIFICATION_EMAIL" "your-email@example.com"
 
-# 3. Deploy alert rules and action group
+# 3. Deploy Logic App webhook (writes SERVICENOW_WEBHOOK_URL into .env)
+scripts/50-deploy-logic-app.sh
+
+# 4. Deploy alert rules and action group
 scripts/50-deploy-alert-rules.sh
 
 # 4. Configure SRE Agent subagent (Azure Portal)
@@ -280,7 +300,8 @@ scripts/50-deploy-alert-rules.sh
 ```
 
 **Components:**
-- **5 Azure Monitor Alert Rules**: Memory (80%, 90%), CPU (70%), and error rate (10, 50 per min) thresholds
+- **4 Azure Monitor Alert Rules**: Memory (80%, 90%) and error rate (10, 50 per min) thresholds
+- **Optional CPU alert**: Deploy separately via [scripts/65-deploy-cpu-alert.sh](scripts/65-deploy-cpu-alert.sh)
 - **ServiceNow Action Group**: Webhook integration for incident creation
 - **SRE Agent Subagent**: Automated investigation and remediation workflow with Teams notifications
 - **Expected Duration**: 5-15 minutes end-to-end

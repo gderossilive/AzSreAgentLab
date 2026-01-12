@@ -44,7 +44,7 @@ echo "Setting active subscription..."
 az account set --subscription "$AZURE_SUBSCRIPTION_ID"
 
 # Deploy Logic App
-BICEP_FILE="$REPO_ROOT/demo/servicenow-logic-app.bicep"
+BICEP_FILE="$REPO_ROOT/demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep"
 
 if [[ ! -f "$BICEP_FILE" ]]; then
   echo "ERROR: Bicep template not found at $BICEP_FILE" >&2

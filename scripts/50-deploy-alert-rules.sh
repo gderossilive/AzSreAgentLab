@@ -94,7 +94,7 @@ fi
 echo ""
 
 # Deploy Bicep template
-BICEP_FILE="$REPO_ROOT/demo/octopets-alert-rules.bicep"
+BICEP_FILE="$REPO_ROOT/demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep"
 
 if [[ ! -f "$BICEP_FILE" ]]; then
   echo "ERROR: Bicep template not found at $BICEP_FILE" >&2
@@ -168,7 +168,7 @@ echo "    '$SERVICENOW_WEBHOOK_URL'"
 echo ""
 echo "Next Steps:"
 echo "  1. Configure SRE Agent subagent in Azure Portal"
-echo "  2. Paste YAML from: demo/servicenow-azure-resource-error-handler.yaml"
+echo "  2. Paste YAML from: demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml"
 echo "  3. Update email address placeholder in YAML"
 echo "  4. Enable the subagent"
 echo "  5. Run demo: see demo/README.md for instructions"

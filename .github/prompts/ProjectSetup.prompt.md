@@ -34,6 +34,7 @@ You are helping a new contributor set up and deploy this repository’s lab envi
    - `scripts/20-az-login.sh`
    - `scripts/30-deploy-octopets.sh`
    - `scripts/31-deploy-octopets-containers.sh`
+  - `scripts/32-openapi-smoke-test.sh` (optional but recommended post-deploy/CI check)
    - `scripts/10-clone-repos.sh` (only if `external/sre-agent` is missing)
    - `scripts/40-deploy-sre-agent.sh`
 
@@ -41,6 +42,7 @@ You are helping a new contributor set up and deploy this repository’s lab envi
    - `scripts/30-deploy-octopets.sh` sets `OCTOPETS_RG_NAME` and `SRE_AGENT_TARGET_RESOURCE_GROUPS` in `.env`.
    - `scripts/31-deploy-octopets-containers.sh` sets `OCTOPETS_API_URL` and `OCTOPETS_FE_URL` in `.env`.
    - The frontend URL should be reachable in a browser.
+  - `scripts/32-openapi-smoke-test.sh` uses `OCTOPETS_API_URL/openapi/v1.json` to discover safe GET endpoints and exits non-zero if any selected endpoint does not return 2xx.
 
 4) **Docs consistency (minimal fixes only)**
    - If any existing docs claim Octopets infra is deployed via `azd`, but the repo actually deploys via `az deployment sub create` + Bicep, update the docs to reflect reality.
