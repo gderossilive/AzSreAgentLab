@@ -80,17 +80,27 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
    scripts/30-deploy-octopets.sh
    ```
 
+   This deploys infrastructure via Azure CLI + Bicep at subscription scope and sets `OCTOPETS_RG_NAME` in your `.env`.
+
 4. **Build and Deploy Containers**
    ```bash
    scripts/31-deploy-octopets-containers.sh
    ```
 
-5. **Deploy SRE Agent**
+   This uses ACR remote builds (`az acr build`) and updates `.env` with `OCTOPETS_API_URL` and `OCTOPETS_FE_URL`.
+
+5. **Ensure SRE Agent reference repo is present**
+   ```bash
+   # Only needed if external/sre-agent is missing
+   scripts/10-clone-repos.sh
+   ```
+
+6. **Deploy SRE Agent**
    ```bash
    scripts/40-deploy-sre-agent.sh
    ```
 
-6. **[Optional] Deploy ServiceNow Integration Demo**
+7. **[Optional] Deploy ServiceNow Integration Demo**
    ```bash
    # See demo/README.md for complete instructions
    # Requires ServiceNow developer instance and credentials in .env
@@ -109,8 +119,8 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
 ├── scripts/
 │   ├── 10-clone-repos.sh  # Bootstrap external repos (optional)
 │   ├── 20-az-login.sh     # Azure authentication
-│   ├── 30-deploy-octopets.sh        # Deploy infrastructure
-│   ├── 31-deploy-octopets-containers.sh  # Build & deploy containers
+│   ├── 30-deploy-octopets.sh        # Deploy Octopets infrastructure (Azure CLI + Bicep, subscription scope)
+│   ├── 31-deploy-octopets-containers.sh  # Build & deploy containers (ACR remote builds, no Docker)
 │   ├── 40-deploy-sre-agent.sh       # Deploy SRE Agent
 │   ├── 50-deploy-alert-rules.sh     # Deploy ServiceNow integration
 │   ├── load-env.sh        # Load environment variables

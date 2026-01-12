@@ -37,10 +37,12 @@ Rationale:
 ## 5. Prerequisites
 ### 5.1 Tools
 - Azure CLI (`az`)
-- Azure Developer CLI (`azd`)
 - Git
-- Docker (required by Octopets sample)
-- .NET SDK (required by Octopets sample)
+- Bash shell
+
+Notes:
+- This repo deploys Octopets infrastructure via Azure CLI + Bicep and builds containers using ACR remote builds (`az acr build`), so **local Docker is not required**.
+- .NET SDK is only needed if you plan to run Octopets locally for development.
 
 ### 5.2 Azure permissions
 The deploying identity must be able to:
@@ -103,22 +105,24 @@ az account show
 ```
 
 ### 7.2 Deploy Octopets workload with `azd`
-Follow the Octopets setup guide referenced by the SRE Agent repo:
-- https://github.com/microsoft/sre-agent/blob/main/samples/automation/sample-apps/octopets-setup.md
+Deploy Octopets using this repo’s scripts (no `azd` required):
 
 High-level intent:
-1. Deploy Octopets into `swedencentral` using `azd`.
-2. Capture the resource group name created by `azd`.
-3. Set `OCTOPETS_RG_NAME` and `SRE_AGENT_TARGET_RESOURCE_GROUPS` to that RG name.
+1. Deploy Octopets infrastructure into `swedencentral` via subscription-scope Bicep.
+2. Build/push images using ACR remote builds.
+3. Deploy the backend/frontend to Azure Container Apps.
 
-Example pattern (commands vary by Octopets repo instructions):
+Commands:
 ```bash
-# In the Octopets repo directory
-azd auth login --tenant <AZURE_TENANT_ID>
-azd init
-azd up
+# From the repo root
+source scripts/load-env.sh
+scripts/20-az-login.sh
 
-# Record the created RG name from azd output
+# Deploy infra (subscription scope) and auto-set OCTOPETS_RG_NAME + SRE_AGENT_TARGET_RESOURCE_GROUPS in .env
+scripts/30-deploy-octopets.sh
+
+# Remote build images (ACR) and deploy container apps; auto-set OCTOPETS_API_URL + OCTOPETS_FE_URL in .env
+scripts/31-deploy-octopets-containers.sh
 ```
 
 ### 7.3 Deploy Azure SRE Agent with Bicep (from reference repo)
@@ -131,22 +135,20 @@ Key requirements for this lab:
 - `targetResourceGroups = ["<OCTOPETS_RESOURCE_GROUP_NAME>"]`
 
 Recommended approach:
-- Clone the reference repo into a subfolder (or use it as read-only reference)
-- Run the provided deployment scripts under `samples/bicep-deployment/scripts/`
+- Ensure the reference repo exists under `external/sre-agent/` (run `scripts/10-clone-repos.sh` only if it’s missing)
+- Run the provided deployment scripts under `external/sre-agent/samples/bicep-deployment/scripts/` (this repo wraps it with `scripts/40-deploy-sre-agent.sh`)
 
 Example intent (exact script flags may evolve):
 ```bash
-# In microsoft/sre-agent repo
-cd samples/bicep-deployment/scripts
+# From the repo root
+source scripts/load-env.sh
+scripts/20-az-login.sh
 
-# Use the deploy script in non-interactive mode and pass only Octopets RG as the target
-./deploy.sh --no-interactive \
-  -s <AZURE_SUBSCRIPTION_ID> \
-  -r <SRE_AGENT_RG_NAME> \
-  -n <SRE_AGENT_NAME> \
-  -l swedencentral \
-  -a High \
-  -t <OCTOPETS_RESOURCE_GROUP_NAME>
+# Only needed if external/sre-agent is missing
+scripts/10-clone-repos.sh
+
+# Deploy the SRE Agent
+scripts/40-deploy-sre-agent.sh
 ```
 
 Expected outcome:
