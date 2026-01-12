@@ -1,7 +1,7 @@
 # Azure SRE Agent Lab — Hybrid Deployment Spec (Sweden Central)
 
 ## 1. Purpose
-This lab provisions a realistic Azure workload using Azure Developer CLI (`azd`) and then deploys Azure SRE Agent (Preview) using the official reference repo’s Bicep templates, with permissions scoped to the workload’s resource group only.
+This lab provisions a realistic Azure workload (Octopets) using this repo’s deployment scripts (Azure CLI + subscription-scope Bicep + ACR remote builds), and then deploys Azure SRE Agent (Preview) using the official reference repo’s Bicep templates, with permissions scoped to the workload’s resource group only.
 
 This spec is written to be shareable:
 - Uses placeholders for tenant/subscription IDs
@@ -13,14 +13,14 @@ Use this repository as the authoritative reference for templates and samples:
 
 Notes:
 - The SRE Agent resource deployment is provided via Bicep + scripts in the repo.
-- `azd` is used in the repo’s documentation for deploying the sample workload (Octopets), not for deploying the SRE Agent resource.
+- Upstream Octopets docs mention `azd`, but this lab repo deploys Octopets using `scripts/30-deploy-octopets.sh` + `scripts/31-deploy-octopets-containers.sh` (no `azd` required).
 
 ## 3. Target Region
 - Azure region: `swedencentral`
 
 ## 4. Design Decisions
 ### 4.1 Hybrid deployment (required)
-- Workload (Octopets): deployed with `azd`
+- Workload (Octopets): deployed with Azure CLI + Bicep (subscription scope) and ACR remote builds
 - Azure SRE Agent: deployed with Azure CLI + Bicep templates from the reference repo
 
 ### 4.2 Incident platform (required)
@@ -104,7 +104,7 @@ az account set --subscription <AZURE_SUBSCRIPTION_ID>
 az account show
 ```
 
-### 7.2 Deploy Octopets workload with `azd`
+### 7.2 Deploy Octopets workload
 Deploy Octopets using this repo’s scripts (no `azd` required):
 
 High-level intent:
@@ -192,7 +192,7 @@ Note:
 
 ## 10. Success Criteria
 The lab is considered successful when:
-- Octopets is deployed into `swedencentral` via `azd`.
+- Octopets is deployed into `swedencentral` via this repo’s scripts.
 - Azure SRE Agent is deployed into `swedencentral`.
 - The agent’s managed identity has `Contributor` only on the Octopets RG (and not broadly across the subscription).
 - An Azure Monitor alert from the Octopets RG is visible to the agent and the agent can perform incident triage.

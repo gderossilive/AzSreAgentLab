@@ -58,8 +58,24 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
 ### Prerequisites
 
 - Azure CLI (`az`)
+- Bash shell
 - Azure subscription with permissions to create resources and role assignments
 - Dev container environment (included)
+
+Notes:
+- Local Docker is not required; container images are built remotely using Azure Container Registry (`az acr build`).
+
+Permissions needed (common working combinations):
+- Ability to run subscription-scope deployments that create resource groups (`az deployment sub create`)
+- Ability to create RBAC role assignments scoped to the Octopets resource group and the SRE Agent resource group
+- Typically: `Owner`, or `Contributor` + `User Access Administrator` at the required scopes
+
+Region requirement:
+- `swedencentral` (SRE Agent preview constraint)
+
+Security constraints:
+- Never commit `.env` (or any secrets)
+- Do not grant the SRE Agent subscription-wide permissions; scope access to the target resource group(s) only
 
 ### Deployment
 
@@ -68,6 +84,15 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
    # Copy and edit .env with your Azure credentials
    cp .env.example .env
    ```
+
+   Minimum variables for the happy path:
+   - `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_LOCATION`
+   - `OCTOPETS_ENV_NAME`
+   - `SRE_AGENT_RG_NAME`, `SRE_AGENT_NAME`, `SRE_AGENT_ACCESS_LEVEL`
+
+   Notes:
+   - `OCTOPETS_RG_NAME` and `SRE_AGENT_TARGET_RESOURCE_GROUPS` are auto-populated by `scripts/30-deploy-octopets.sh`.
+   - `OCTOPETS_API_URL` and `OCTOPETS_FE_URL` are auto-populated by `scripts/31-deploy-octopets-containers.sh`.
 
 2. **Authenticate**
    ```bash
@@ -81,6 +106,7 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
    ```
 
    This deploys infrastructure via Azure CLI + Bicep at subscription scope and sets `OCTOPETS_RG_NAME` in your `.env`.
+   It also sets `SRE_AGENT_TARGET_RESOURCE_GROUPS` in your `.env` to the same RG name.
 
 4. **Build and Deploy Containers**
    ```bash
@@ -88,6 +114,9 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
    ```
 
    This uses ACR remote builds (`az acr build`) and updates `.env` with `OCTOPETS_API_URL` and `OCTOPETS_FE_URL`.
+
+   Verification:
+   - Open the `OCTOPETS_FE_URL` in a browser; the frontend should load.
 
 5. **Ensure SRE Agent reference repo is present**
    ```bash
@@ -99,6 +128,22 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
    ```bash
    scripts/40-deploy-sre-agent.sh
    ```
+
+### Fresh environment (new deployment)
+
+To create a fresh deployment (new resource groups), start with a fresh `.env` and new names:
+
+```bash
+rm -f .env
+cp .env.example .env
+
+# Edit these before deploying (examples)
+scripts/set-dotenv-value.sh "OCTOPETS_ENV_NAME" "octopets-lab-$(date +%Y%m%d%H%M%S)"
+scripts/set-dotenv-value.sh "SRE_AGENT_RG_NAME" "rg-sre-agent-lab-$(date +%Y%m%d%H%M%S)"
+scripts/set-dotenv-value.sh "SRE_AGENT_NAME" "sre-agent-lab-$(date +%Y%m%d%H%M%S)"
+```
+
+Then follow the same happy-path deployment sequence above.
 
 7. **[Optional] Deploy ServiceNow Integration Demo**
    ```bash
