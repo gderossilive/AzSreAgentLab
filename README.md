@@ -198,6 +198,8 @@ Reusable prompt templates live under [.github/prompts/](.github/prompts/).
 - Project setup: [.github/prompts/ProjectSetup.prompt.md](.github/prompts/ProjectSetup.prompt.md)
 - Azure Health Check demo setup: [.github/prompts/AzureHealthCheckSetup.prompt.md](.github/prompts/AzureHealthCheckSetup.prompt.md)
 - ServiceNow demo setup: [.github/prompts/ServiceNowAzureResourceHandlerSetup.prompt.md](.github/prompts/ServiceNowAzureResourceHandlerSetup.prompt.md)
+- ServiceNow demo run: [.github/prompts/ServiceNowDemoRun.prompt.md](.github/prompts/ServiceNowDemoRun.prompt.md)
+- ServiceNow demo stop/cleanup: [.github/prompts/ServiceNowDemoStop.prompt.md](.github/prompts/ServiceNowDemoStop.prompt.md)
 - Instance memory setup: [.github/prompts/MemorySetup.prompt.md](.github/prompts/MemorySetup.prompt.md)
 
 ### External repositories (vendored copies)
