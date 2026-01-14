@@ -172,7 +172,7 @@ This demo showcases an **autonomous Azure SRE Agent** that monitors Azure resour
    > **Why Scheduled?** This is a proactive monitoring agent that analyzes 24-hour windows of metrics to detect statistical anomalies, unlike reactive agents triggered by incidents.
 
 5. **Paste YAML content**:
-   - Copy the content from `azurehealthcheck-subagent.yaml`
+   - Copy the content from `azurehealthcheck-subagent-simple.yaml`
    - Paste into the YAML editor
 
 6. **Click "Validate"** to check syntax
@@ -198,6 +198,10 @@ You should see a test message in your Teams channel.
 
 This sends a realistic anomaly alert showing what the agent will send when it detects issues.
 
+> **Important**: Tests 1 and 2 validate your **Teams webhook + Adaptive Card formatting**.
+> They do **not** prove the Azure SRE Agent connector is configured correctly.
+> For end-to-end validation (agent execution → Teams connector), run Tests 3 and 4.
+
 #### Test 3: Trigger Manual Health Check
 
 1. **Navigate to SRE Agent** in Azure Portal
@@ -211,7 +215,49 @@ This sends a realistic anomaly alert showing what the agent will send when it de
    - View logs for auto-discovery and metric collection
    - Verify if anomalies were detected
 
-#### Test 3: Generate Anomalies (Optional)
+#### Test 4: Force a Real Anomaly (Recommended)
+
+The easiest way to force a real anomaly in this lab is to enable one of the Octopets backend injectors
+and generate traffic so Azure Monitor has measurable CPU/memory impact.
+
+Prereqs:
+- Octopets is deployed and reachable
+- Your `.env` has `OCTOPETS_RG_NAME`, `OCTOPETS_API_URL`, and `OCTOPETS_FE_URL`
+
+**Option A — CPU anomaly (fast, safe)**
+
+```bash
+./scripts/61-enable-cpu-stress.sh
+./scripts/60-generate-traffic.sh 15
+```
+
+Wait ~5–15 minutes for metrics aggregation, then in Azure Portal run the `healthcheckagent` subagent again.
+
+Cleanup:
+
+```bash
+./scripts/62-disable-cpu-stress.sh
+```
+
+**Option B — Memory anomaly (more aggressive)**
+
+```bash
+./scripts/63-enable-memory-errors.sh
+./scripts/60-generate-traffic.sh 10
+```
+
+Wait ~5–15 minutes, then run the `healthcheckagent` subagent again.
+
+Cleanup:
+
+```bash
+./scripts/64-disable-memory-errors.sh
+```
+
+> Tip: If you still see "No anomalies detected", extend traffic duration (e.g., 20–30 minutes)
+> or re-run after another few minutes to allow metrics to roll up.
+
+#### Test 5: Generate Anomalies (Manual CLI Alternative)
 
 To test anomaly detection, you can temporarily stress an Azure resource:
 
@@ -219,7 +265,7 @@ To test anomaly detection, you can temporarily stress an Azure resource:
 # Example: Enable memory leak in Container App
 az containerapp update \
   -n octopetsapi \
-  -g rg-octopets-lab \
+   -g "$OCTOPETS_RG_NAME" \
   --set-env-vars "MEMORY_ERRORS=true"
 
 # Generate traffic to trigger memory increase
@@ -229,7 +275,7 @@ az containerapp update \
 # After testing, disable the leak:
 az containerapp update \
   -n octopetsapi \
-  -g rg-octopets-lab \
+   -g "$OCTOPETS_RG_NAME" \
   --set-env-vars "MEMORY_ERRORS=false"
 ```
 
@@ -295,7 +341,7 @@ The agent will:
 
 ### Modify Monitoring Scope
 
-Edit the system prompt in `azurehealthcheck-subagent.yaml`:
+Edit the system prompt in `azurehealthcheck-subagent-simple.yaml`:
 
 ```yaml
 Scope discovery and configuration:
@@ -411,7 +457,7 @@ grep TEAMS_WEBHOOK_URL .env
 - Tool names match available SRE Agent tools
 
 **Solution**:
-- Copy YAML from `azurehealthcheck-subagent.yaml` exactly
+- Copy YAML from `azurehealthcheck-subagent-simple.yaml` exactly
 - Use Azure Portal YAML validator before saving
 
 ### Issue: Metrics not found
