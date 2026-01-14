@@ -119,8 +119,8 @@ resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
             statusCode: 200
             body: {
               status: 'Incident created'
-              incident: '@{if(startsWith(trim(string(body(\'Create_ServiceNow_Incident\'))), \'{\'), json(body(\'Create_ServiceNow_Incident\'))?[\'result\']?[\'number\'], null)}'
-              sys_id: '@{if(startsWith(trim(string(body(\'Create_ServiceNow_Incident\'))), \'{\'), json(body(\'Create_ServiceNow_Incident\'))?[\'result\']?[\'sys_id\'], null)}'
+              incident: '@{json(string(body(\'Create_ServiceNow_Incident\')))?[\'result\']?[\'number\']}'
+              sys_id: '@{json(string(body(\'Create_ServiceNow_Incident\')))?[\'result\']?[\'sys_id\']}'
               raw_response: '@{string(body(\'Create_ServiceNow_Incident\'))}'
             }
           }
