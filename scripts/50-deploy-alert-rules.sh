@@ -78,14 +78,36 @@ else
 fi
 echo ""
 
-# Test ServiceNow connection
+# Test connectivity
 echo "Testing ServiceNow connection..."
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-  -H "Accept: application/json" \
-  -H "$SERVICENOW_AUTH_HEADER" \
-  "${SERVICENOW_WEBHOOK_URL}?sysparm_limit=1")
+if [[ "$SERVICENOW_WEBHOOK_URL" == *"logic.azure.com"* ]]; then
+  # Logic App trigger expects POST. (Auth to ServiceNow is handled inside the Logic App.)
+  TEST_PAYLOAD=$(jq -n --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
+    schemaId: "azureMonitorCommonAlertSchema",
+    data: {
+      essentials: {
+        alertRule: "Test Alert (alert-rule deploy script)",
+        severity: "Sev2",
+        monitorCondition: "Fired",
+        description: "Connectivity test",
+        firedDateTime: $t
+      },
+      alertContext: {}
+    }
+  }')
 
-if [[ "$HTTP_STATUS" -eq 200 ]]; then
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Content-Type: application/json" \
+    -d "$TEST_PAYLOAD" \
+    "$SERVICENOW_WEBHOOK_URL")
+else
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Accept: application/json" \
+    -H "$SERVICENOW_AUTH_HEADER" \
+    "${SERVICENOW_WEBHOOK_URL}?sysparm_limit=1")
+fi
+
+if [[ "$HTTP_STATUS" -eq 200 ]] || [[ "$HTTP_STATUS" -eq 202 ]]; then
   echo "✓ ServiceNow connection successful (HTTP $HTTP_STATUS)"
 else
   echo "WARNING: ServiceNow connection returned HTTP $HTTP_STATUS" >&2
@@ -160,11 +182,18 @@ echo "To verify action group:"
 echo "  az monitor action-group show -n $ACTION_GROUP_NAME -g $OCTOPETS_RG_NAME"
 echo ""
 echo "To test ServiceNow incident creation manually:"
-echo "  curl -X POST \\"
-echo "    -H 'Content-Type: application/json' \\"
-echo "    -H '$SERVICENOW_AUTH_HEADER' \\"
-echo "    -d '{\"short_description\":\"Test Alert\",\"description\":\"Test from Azure CLI\",\"priority\":\"2\"}' \\"
-echo "    '$SERVICENOW_WEBHOOK_URL'"
+if [[ "$SERVICENOW_WEBHOOK_URL" == *"logic.azure.com"* ]]; then
+  echo "  curl -X POST \\\" 
+  echo "    -H 'Content-Type: application/json' \\\" 
+  echo "    -d '{\"schemaId\":\"azureMonitorCommonAlertSchema\",\"data\":{\"essentials\":{\"alertRule\":\"Manual Test Alert\",\"severity\":\"Sev2\",\"monitorCondition\":\"Fired\",\"description\":\"Manual test\",\"firedDateTime\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"},\"alertContext\":{}}}' \\\" 
+  echo "    '$SERVICENOW_WEBHOOK_URL'"
+else
+  echo "  curl -X POST \\\" 
+  echo "    -H 'Content-Type: application/json' \\\" 
+  echo "    -u \"\$SERVICENOW_USERNAME:\$SERVICENOW_PASSWORD\" \\\" 
+  echo "    -d '{\"short_description\":\"Test Alert\",\"description\":\"Test from Azure CLI\",\"priority\":\"2\"}' \\\" 
+  echo "    '$SERVICENOW_WEBHOOK_URL'"
+fi
 echo ""
 echo "Next Steps:"
 echo "  1. Configure SRE Agent subagent in Azure Portal"

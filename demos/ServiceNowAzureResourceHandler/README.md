@@ -30,11 +30,16 @@ Sign up for a free developer instance:
 
 Verify these resources exist:
 ```bash
-# Check Octopets resources
-az containerapp list -g rg-octopets-lab -o table
+# Load environment
+source scripts/load-env.sh
 
-# Check SRE Agent
-az resource show --name sre-agent-lab --resource-group rg-sre-agent-lab
+# Check Octopets resources
+az containerapp list -g $OCTOPETS_RG_NAME -o table
+
+# Check SRE Agent power state
+az resource show -g $SRE_AGENT_RG_NAME -n $SRE_AGENT_NAME \
+  --resource-type Microsoft.App/agents \
+  --query properties.powerState -o tsv
 ```
 
 Expected output:
@@ -54,18 +59,35 @@ scripts/set-dotenv-value.sh "SERVICENOW_INSTANCE" "dev12345"  # Your instance
 scripts/set-dotenv-value.sh "SERVICENOW_USERNAME" "admin"
 scripts/set-dotenv-value.sh "SERVICENOW_PASSWORD" "your-password"
 scripts/set-dotenv-value.sh "INCIDENT_NOTIFICATION_EMAIL" "your-email@example.com"
+
+# Reload env to pick up changes
+source scripts/load-env.sh
 ```
 
 ## Deployment Steps
 
-### Step 1: Deploy Azure Monitor Alert Rules
+### Step 1: Deploy the Logic App webhook (recommended)
+
+This demo uses a Logic App webhook so Azure Monitor can call a single HTTPS endpoint, and the Logic App then creates the ServiceNow incident with authentication.
 
 ```bash
-# Load environment
 source scripts/load-env.sh
 
-# Deploy alert rules and ServiceNow action group
-scripts/50-deploy-alert-rules.sh
+# Deploy Logic App and write SERVICENOW_WEBHOOK_URL back into .env
+./scripts/50-deploy-logic-app.sh
+```
+
+**Expected Results**:
+- Script prints a Logic App callback URL
+- `.env` is updated with `SERVICENOW_WEBHOOK_URL` (do not commit `.env`)
+
+### Step 2: Deploy Azure Monitor Alert Rules
+
+```bash
+source scripts/load-env.sh
+
+# Deploy alert rules and ServiceNow action group (points to SERVICENOW_WEBHOOK_URL)
+./scripts/50-deploy-alert-rules.sh
 ```
 
 **Expected Output**:
@@ -99,13 +121,9 @@ Alert Rules:
 - 1 action group (ServiceNow webhook)
 - Auto-mitigation enabled on all alerts
 
-### Step 2: Configure SRE Agent Subagent
+### Step 3: Configure SRE Agent Subagent
 
-1. **Open Azure Portal**:
-   ```bash
-   # Get SRE Agent URL
-   echo "https://portal.azure.com/#@$AZURE_TENANT_ID/resource/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/rg-sre-agent-lab/providers/Microsoft.SreAgent/sreAgents/sre-agent-lab"
-   ```
+1. **Open Azure Portal** and navigate to your SRE Agent resource (`$SRE_AGENT_RG_NAME` → `$SRE_AGENT_NAME`).
 
 2. **Navigate to Subagent Builder**:
    - Azure Portal → `rg-sre-agent-lab` → `sre-agent-lab`
@@ -115,7 +133,7 @@ Alert Rules:
 3. **Configure ServiceNow Trigger**:
    - **Trigger Name**: `ServiceNow Incident`
    - **Trigger Type**: `Scheduled` (every 2 minutes)
-   - **YAML Configuration**: Copy contents from `demo/servicenow-subagent-simple.yaml`
+  - **YAML Configuration**: Copy contents from [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml)
    - **Update Email**: Replace `<INSERT_YOUR_EMAIL_HERE>` with your actual email in the system_prompt
    - **Save and Enable**
 
@@ -129,13 +147,20 @@ Alert Rules:
 ### Step 3: Verify Configuration
 
 ```bash
-# Check alert rules
-az monitor metrics alert list -g rg-octopets-lab \
-  --query '[].{Name:name, Enabled:enabled, Severity:severity}' \
+# Note: In some environments `az monitor ...` may fail to load.
+# If that happens, use ARM (`az rest`) as shown below.
+
+# Check alert rules (ARM)
+az rest --method get \
+  --uri "https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$OCTOPETS_RG_NAME/providers/Microsoft.Insights/metricAlerts?api-version=2018-03-01" \
+  --query "value[].{name:name, enabled:properties.enabled, severity:properties.severity}" \
   -o table
 
-# Check action group
-az monitor action-group list -g rg-octopets-lab -o table
+# Check action group (ARM)
+az rest --method get \
+  --uri "https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$OCTOPETS_RG_NAME/providers/microsoft.insights/actionGroups?api-version=2023-01-01" \
+  --query "value[].{name:name, enabled:properties.enabled}" \
+  -o table
 
 # Test ServiceNow connection manually
 curl -X GET \
@@ -160,7 +185,7 @@ source scripts/load-env.sh
 # Enable memory leak feature flag
 az containerapp update \
   -n octopetsapi \
-  -g rg-octopets-lab \
+  -g $OCTOPETS_RG_NAME \
   --set-env-vars "MEMORY_ERRORS=true"
 
 # Wait for container restart (30-60 seconds)
@@ -170,12 +195,21 @@ sleep 60
 # Verify restart
 az containerapp replica list \
   -n octopetsapi \
-  -g rg-octopets-lab \
+  -g $OCTOPETS_RG_NAME \
   --query '[].name' \
   -o table
 ```
 
 ### Generate Memory Leak Traffic
+
+For a script-driven demo (recommended):
+
+```bash
+source scripts/load-env.sh
+
+# Generate traffic for 20 minutes (adjust as needed)
+./scripts/60-generate-traffic.sh 20
+```
 
 1. **Open Octopets Frontend**:
    ```bash
@@ -191,15 +225,23 @@ az containerapp replica list \
 
 3. **Monitor Progress**:
    ```bash
-   # Watch memory usage (run in separate terminal)
+   # Watch memory usage (ARM)
+   RG="$OCTOPETS_RG_NAME"
+   RID=$(az containerapp show -n octopetsapi -g "$RG" --query id -o tsv)
+
    while true; do
-     az monitor metrics list \
-       --resource /subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/rg-octopets-lab/providers/Microsoft.App/containerApps/octopetsapi \
-       --metric WorkingSetBytes \
-       --interval PT1M \
-       --start-time "$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" \
-       --query 'value[0].timeseries[0].data[-1].average' \
-       -o tsv | awk '{printf "Memory: %.2f MB\n", $1/1024/1024}'
+     TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+     START=$(date -u -d '-10 min' '+%Y-%m-%dT%H:%M:%SZ')
+     BYTES=$(az rest --method get --uri "https://management.azure.com$RID/providers/microsoft.insights/metrics?api-version=2018-01-01&metricnames=WorkingSetBytes&interval=PT1M&aggregation=Average&timespan=$START/$TS" --query "value[0].timeseries[0].data[-1].average" -o tsv 2>/dev/null || echo "na")
+     if [[ "$BYTES" != "na" ]]; then
+       python3 - <<PY
+import sys
+v=float("$BYTES")
+print(f"Memory: {v/1024/1024:.2f} MB")
+PY
+     else
+       echo "Memory: na"
+     fi
      sleep 30
    done
    ```
@@ -224,19 +266,17 @@ az containerapp replica list \
 ### 1. Check Alert Fired
 
 ```bash
-# List recent alert activations
-az monitor metrics alert show \
-  -n "High Memory Usage - Octopets API" \
-  -g rg-octopets-lab \
-  --query '{Name:name, Enabled:enabled, LastFired:lastUpdatedTime}' \
-  -o json
+# Show alert status (ARM)
+NAME=$(python3 - <<'PY'
+import urllib.parse
+print(urllib.parse.quote('High Memory Usage - Octopets API', safe=''))
+PY
+)
 
-# View alert history
-az monitor activity-log list \
-  --resource-group rg-octopets-lab \
-  --start-time "$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" \
-  --query "[?contains(operationName.value, 'Microsoft.Insights/metricAlerts')].{Time:eventTimestamp, Alert:resourceId, Status:status.value}" \
-  -o table
+az rest --method get \
+  --uri "https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$OCTOPETS_RG_NAME/providers/Microsoft.Insights/metricAlerts/$NAME/status?api-version=2018-03-01" \
+  --query "value[0].properties.status" \
+  -o tsv
 ```
 
 ### 2. Check ServiceNow Incident
@@ -255,6 +295,8 @@ curl -X GET \
   "https://$SERVICENOW_INSTANCE.service-now.com/api/now/table/incident?sysparm_query=priority=1^ORpriority=2^short_descriptionLIKEOctopets&sysparm_fields=number,short_description,state,sys_created_on" \
   | jq '.result[] | {number, short_description, state, created: .sys_created_on}'
 ```
+
+Note: ServiceNow developer instances can hibernate. If the instance is asleep, API calls may return an HTML “instance hibernating” page instead of JSON. Wake the instance by signing in to the ServiceNow UI.
 
 **Expected Incident Fields**:
 - **Number**: INC0010001 (auto-incremented)
@@ -322,7 +364,7 @@ echo "GitHub Repository: https://github.com/<your-org>/<your-repo>/issues"
 # Disable MEMORY_ERRORS flag
 az containerapp update \
   -n octopetsapi \
-  -g rg-octopets-lab \
+  -g $OCTOPETS_RG_NAME \
   --set-env-vars "MEMORY_ERRORS=false"
 
 # Restart to clear memory
@@ -519,7 +561,7 @@ az resource show \
 ## References
 
 - **Specification**: [specs/IncidentAutomationServiceNow.md](../specs/IncidentAutomationServiceNow.md)
-- **Subagent YAML**: [servicenow-azure-resource-error-handler.yaml](servicenow-azure-resource-error-handler.yaml)
+- **Subagent YAML**: [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml)
 - **Alert Rules**: [octopets-service-now-alerts.bicep](octopets-service-now-alerts.bicep)
 - **Azure SRE Agent Docs**: https://github.com/microsoft/sre-agent
 - **ServiceNow REST API**: https://docs.servicenow.com/bundle/vancouver-api-reference/page/integrate/inbound-rest/concept/c_RESTAPI.html

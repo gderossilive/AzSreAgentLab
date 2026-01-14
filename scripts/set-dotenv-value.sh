@@ -14,17 +14,30 @@ if [[ ! -f "$env_file" ]]; then
   exit 1
 fi
 
+shell_quote_single() {
+  # Single-quote a value so it can be safely sourced from .env.
+  # Handles values containing spaces, &, ?, =, etc.
+  local s="$1"
+  s=${s//\'/\'"\'"\'}  # ' -> '"'"'
+  printf "'%s'" "$s"
+}
+
+quoted_value="$(shell_quote_single "$value")"
+
+replacement_line="${key}=${quoted_value}"
+
 # Escape sed replacement chars
-escaped_value="${value//\\/\\\\}"
-escaped_value="${escaped_value//&/\\&}"
+escaped_replacement_line="${replacement_line//\\/\\\\}"
+escaped_replacement_line="${escaped_replacement_line//&/\\&}"
+escaped_replacement_line="${escaped_replacement_line//|/\\|}"
 
 tmp_file="${env_file}.tmp"
 
 if grep -qE "^${key}=" "$env_file"; then
-  sed -E "s|^(${key}=).*|\\1${escaped_value}|" "$env_file" > "$tmp_file"
+  sed -E "s|^${key}=.*|${escaped_replacement_line}|" "$env_file" > "$tmp_file"
 else
   cat "$env_file" > "$tmp_file"
-  printf "\n%s=%s\n" "$key" "$value" >> "$tmp_file"
+  printf "\n%s=%s\n" "$key" "$quoted_value" >> "$tmp_file"
 fi
 
 mv "$tmp_file" "$env_file"
