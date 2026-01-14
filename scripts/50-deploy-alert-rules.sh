@@ -94,7 +94,7 @@ fi
 echo ""
 
 # Deploy Bicep template
-BICEP_FILE="$REPO_ROOT/demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep"
+BICEP_FILE="$REPO_ROOT/demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep"
 
 if [[ ! -f "$BICEP_FILE" ]]; then
   echo "ERROR: Bicep template not found at $BICEP_FILE" >&2

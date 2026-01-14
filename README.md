@@ -27,7 +27,7 @@ This lab deploys:
 | Demo | Demo folder | Key config files | Related scripts (run order) |
 |---|---|---|---|
 | Azure Health Check (scheduled anomaly detection → Teams) | [demos/AzureHealthCheck/](demos/AzureHealthCheck/) | [demos/AzureHealthCheck/README.md](demos/AzureHealthCheck/README.md), [demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml](demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml) | [scripts/70-test-teams-webhook.sh](scripts/70-test-teams-webhook.sh) → [scripts/71-send-sample-anomaly.sh](scripts/71-send-sample-anomaly.sh) → (optional) [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) |
-| ServiceNow Incident Automation (Azure Monitor alerts → ServiceNow incident → SRE Agent subagent) | [demos/ServiceNowAzureResourceHandler/](demos/ServiceNowAzureResourceHandler/) | [demos/ServiceNowAzureResourceHandler/README.md](demos/ServiceNowAzureResourceHandler/README.md), [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml), [demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep](demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep), [demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep](demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep) | [scripts/50-deploy-logic-app.sh](scripts/50-deploy-logic-app.sh) → [scripts/50-deploy-alert-rules.sh](scripts/50-deploy-alert-rules.sh) → [scripts/63-enable-memory-errors.sh](scripts/63-enable-memory-errors.sh) (or [scripts/61-enable-cpu-stress.sh](scripts/61-enable-cpu-stress.sh)) → [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) → verify with [scripts/61-check-memory.sh](scripts/61-check-memory.sh) → cleanup: [scripts/64-disable-memory-errors.sh](scripts/64-disable-memory-errors.sh) / [scripts/62-disable-cpu-stress.sh](scripts/62-disable-cpu-stress.sh) |
+| ServiceNow Incident Automation (Azure Monitor alerts → ServiceNow incident → SRE Agent subagent) | [demos/ServiceNowAzureResourceHandler/](demos/ServiceNowAzureResourceHandler/) | [demos/ServiceNowAzureResourceHandler/README.md](demos/ServiceNowAzureResourceHandler/README.md), [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml), [demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep](demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep), [demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep](demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep) | [scripts/50-deploy-logic-app.sh](scripts/50-deploy-logic-app.sh) → [scripts/50-deploy-alert-rules.sh](scripts/50-deploy-alert-rules.sh) → [scripts/63-enable-memory-errors.sh](scripts/63-enable-memory-errors.sh) (or [scripts/61-enable-cpu-stress.sh](scripts/61-enable-cpu-stress.sh)) → [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) → verify with [scripts/61-check-memory.sh](scripts/61-check-memory.sh) → cleanup: [scripts/64-disable-memory-errors.sh](scripts/64-disable-memory-errors.sh) / [scripts/62-disable-cpu-stress.sh](scripts/62-disable-cpu-stress.sh) |
 
 ## 📋 Architecture
 
@@ -182,7 +182,7 @@ Then follow the same happy-path deployment sequence above.
 │   ├── ServiceNowAzureResourceHandler/
 │   │   ├── README.md      # ServiceNow demo execution guide
 │   │   ├── servicenow-subagent-simple.yaml  # SRE Agent subagent
-│   │   └── octopets-alert-rules.bicep       # Alert rules template
+│   │   └── octopets-service-now-alerts.bicep       # Alert rules template
 │   └── AzureHealthCheck/
 │       ├── README.md      # Health check setup guide
 │       └── azurehealthcheck-subagent-simple.yaml  # Health monitoring subagent
@@ -313,7 +313,7 @@ scripts/50-deploy-alert-rules.sh
 - **Demo Guide**: [demos/ServiceNowAzureResourceHandler/README.md](demos/ServiceNowAzureResourceHandler/README.md)
 - **Full Specification**: [specs/IncidentAutomationServiceNow.md](specs/IncidentAutomationServiceNow.md)
 - **Subagent YAML**: [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml)
-- **Alert Rules**: [demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep](demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep)
+- **Alert Rules**: [demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep](demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep)
 
 ### Testing Scenarios
 

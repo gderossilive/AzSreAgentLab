@@ -520,7 +520,7 @@ az resource show \
 
 - **Specification**: [specs/IncidentAutomationServiceNow.md](../specs/IncidentAutomationServiceNow.md)
 - **Subagent YAML**: [servicenow-azure-resource-error-handler.yaml](servicenow-azure-resource-error-handler.yaml)
-- **Alert Rules**: [octopets-alert-rules.bicep](octopets-alert-rules.bicep)
+- **Alert Rules**: [octopets-service-now-alerts.bicep](octopets-service-now-alerts.bicep)
 - **Azure SRE Agent Docs**: https://github.com/microsoft/sre-agent
 - **ServiceNow REST API**: https://docs.servicenow.com/bundle/vancouver-api-reference/page/integrate/inbound-rest/concept/c_RESTAPI.html
 - **Azure Monitor Alerts**: https://learn.microsoft.com/azure/azure-monitor/alerts/alerts-overview

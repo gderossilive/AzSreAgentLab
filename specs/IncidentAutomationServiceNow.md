@@ -82,7 +82,7 @@ Outlook Email
 
 ### 2. Azure Monitor Alert Rules
 
-**File**: `demo/octopets-alert-rules.bicep`
+**File**: `demo/octopets-service-now-alerts.bicep`
 
 **Purpose**: Bicep template deploying 4 metric alerts and a ServiceNow action group.
 
@@ -651,7 +651,7 @@ az monitor action-group delete \
 
 See individual files in the `demo/` directory:
 - `servicenow-azure-resource-error-handler.yaml`
-- `octopets-alert-rules.bicep`
+- `octopets-service-now-alerts.bicep`
 - `README.md`
 
 See deployment script:

@@ -57,7 +57,7 @@ Azure Monitor alerts → (Logic App webhook) → ServiceNow incident → Azure S
    - Logic App template:
      - `demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep`
    - Alert rules template:
-     - `demos/ServiceNowAzureResourceHandler/octopets-alert-rules.bicep`
+     - `demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep`
 
 ## Constraints
 - Do not modify vendored sources under `external/`.
