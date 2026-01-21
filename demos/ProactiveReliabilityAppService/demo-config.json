@@ -1,0 +1,9 @@
+{
+  "ResourceGroupName": "rg-sre-proactive-demo",
+  "AppServiceName": "sreproactive-vscode-39596",
+  "Location": "swedencentral",
+  "SubscriptionId": "06dbbc7b-2363-4dd4-9803-95d07f1a8d3e",
+  "ProductionUrl": "https://sreproactive-vscode-39596.azurewebsites.net",
+  "StagingUrl": "https://sreproactive-vscode-39596-staging.azurewebsites.net",
+  "ApplicationInsightsName": "sreproactive-vscode-39596-ai"
+}
