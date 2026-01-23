@@ -15,6 +15,7 @@ echo "Setting CPU_STRESS=false on octopetsapi..."
 az containerapp update \
   -n octopetsapi \
   -g "$OCTOPETS_RG_NAME" \
+  --container-name octopetsapi \
   --set-env-vars "CPU_STRESS=false"
 
 echo ""

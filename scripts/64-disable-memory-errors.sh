@@ -11,6 +11,7 @@ echo "Disabling MEMORY_ERRORS on octopetsapi..."
 az containerapp update \
   --name octopetsapi \
   --resource-group "$OCTOPETS_RG_NAME" \
+  --container-name octopetsapi \
   --set-env-vars "MEMORY_ERRORS=false" \
   --output none
 
