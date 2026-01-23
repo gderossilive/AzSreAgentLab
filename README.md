@@ -22,12 +22,19 @@ This lab deploys:
    - Adaptive Card alerts sent to Microsoft Teams
    - See [Health Check Demo](#-azure-health-check-demo) for details
 
+3. **Proactive Reliability (App Service Slot Swap)** (`demos/ProactiveReliabilityAppService/`)
+   - Deploys an App Service with `staging` slot + App Insights + Activity Log Alert for slot swap
+   - Publishes GOOD (fast) to production and BAD (slow) to staging, then swaps BAD into production
+   - Intended to have Azure SRE Agent detect regression and remediate by swapping back
+   - See [Proactive Reliability Demo](demos/ProactiveReliabilityAppService/README.md) for details
+
 ### Demo → scripts map
 
 | Demo | Demo folder | Key config files | Related scripts (run order) |
 |---|---|---|---|
 | Azure Health Check (scheduled anomaly detection → Teams) | [demos/AzureHealthCheck/](demos/AzureHealthCheck/) | [demos/AzureHealthCheck/README.md](demos/AzureHealthCheck/README.md), [demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml](demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml) | [scripts/70-test-teams-webhook.sh](scripts/70-test-teams-webhook.sh) → [scripts/71-send-sample-anomaly.sh](scripts/71-send-sample-anomaly.sh) → (optional) [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) |
 | ServiceNow Incident Automation (Azure Monitor alerts → ServiceNow incident → SRE Agent subagent) | [demos/ServiceNowAzureResourceHandler/](demos/ServiceNowAzureResourceHandler/) | [demos/ServiceNowAzureResourceHandler/README.md](demos/ServiceNowAzureResourceHandler/README.md), [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml), [demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep](demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep), [demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep](demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep) | [scripts/50-deploy-logic-app.sh](scripts/50-deploy-logic-app.sh) → [scripts/50-deploy-alert-rules.sh](scripts/50-deploy-alert-rules.sh) → [scripts/63-enable-memory-errors.sh](scripts/63-enable-memory-errors.sh) (or [scripts/61-enable-cpu-stress.sh](scripts/61-enable-cpu-stress.sh)) → [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) → verify with [scripts/61-check-memory.sh](scripts/61-check-memory.sh) → cleanup: [scripts/64-disable-memory-errors.sh](scripts/64-disable-memory-errors.sh) / [scripts/62-disable-cpu-stress.sh](scripts/62-disable-cpu-stress.sh) |
+| Proactive Reliability (App Service slot swap → expected rollback) | [demos/ProactiveReliabilityAppService/](demos/ProactiveReliabilityAppService/) | [demos/ProactiveReliabilityAppService/README.md](demos/ProactiveReliabilityAppService/README.md), [demos/ProactiveReliabilityAppService/demo-config.json](demos/ProactiveReliabilityAppService/demo-config.json), [demos/ProactiveReliabilityAppService/SubAgents/](demos/ProactiveReliabilityAppService/SubAgents/) | [demos/ProactiveReliabilityAppService/scripts/01-setup-demo.sh](demos/ProactiveReliabilityAppService/scripts/01-setup-demo.sh) → [demos/ProactiveReliabilityAppService/scripts/02-run-demo.sh](demos/ProactiveReliabilityAppService/scripts/02-run-demo.sh) → (optional) [demos/ProactiveReliabilityAppService/scripts/03-reset-demo.sh](demos/ProactiveReliabilityAppService/scripts/03-reset-demo.sh) |
 
 ## 📋 Architecture
 
@@ -186,6 +193,11 @@ Then follow the same happy-path deployment sequence above.
 │   └── AzureHealthCheck/
 │       ├── README.md      # Health check setup guide
 │       └── azurehealthcheck-subagent-simple.yaml  # Health monitoring subagent
+│   └── ProactiveReliabilityAppService/
+│       ├── README.md      # App Service slot swap demo guide
+│       ├── demo-config.json  # Output from setup script (safe to commit)
+│       ├── SubAgents/     # Portal YAML templates (placeholders)
+│       └── scripts/       # Setup/run/reset scripts
 └── external/
     ├── octopets/          # Octopets sample app
     └── sre-agent/         # SRE Agent reference repo
@@ -198,6 +210,7 @@ Reusable prompt templates live under [.github/prompts/](.github/prompts/).
 - Project setup: [.github/prompts/ProjectSetup.prompt.md](.github/prompts/ProjectSetup.prompt.md)
 - Azure Health Check demo setup: [.github/prompts/AzureHealthCheckSetup.prompt.md](.github/prompts/AzureHealthCheckSetup.prompt.md)
 - Trigger Octopets (Container Apps) anomaly: [.github/prompts/TriggerOctopetsAnomaly.prompt.md](.github/prompts/TriggerOctopetsAnomaly.prompt.md)
+- Proactive Reliability (App Service slot swap) demo run: [.github/prompts/RunProactiveReliabilityDemo.prompt.md](.github/prompts/RunProactiveReliabilityDemo.prompt.md)
 - ServiceNow demo setup: [.github/prompts/ServiceNowAzureResourceHandlerSetup.prompt.md](.github/prompts/ServiceNowAzureResourceHandlerSetup.prompt.md)
 - ServiceNow demo run: [.github/prompts/ServiceNowDemoRun.prompt.md](.github/prompts/ServiceNowDemoRun.prompt.md)
 - ServiceNow demo stop/cleanup: [.github/prompts/ServiceNowDemoStop.prompt.md](.github/prompts/ServiceNowDemoStop.prompt.md)

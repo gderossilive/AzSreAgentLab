@@ -36,6 +36,66 @@
                 "${workspaceFolder}/external/octopets/Octopets.sln"
             ],
             "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "setup-proactive-reliability-demo",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "cd demos/ProactiveReliabilityAppService && ./scripts/01-setup-demo.sh --resource-group rg-sre-proactive-demo --app-service-name sreproactive-vscode-39596 --location swedencentral --subscription-id 06dbbc7b-2363-4dd4-9803-95d07f1a8d3e"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "show-proactive-demo-sre-agent",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "az resource show -g rg-sre-proactive-demo -n sre-agent-proactive-demo --resource-type Microsoft.App/agents --query \"{name:name, endpoint:properties.agentEndpoint, actionMode:properties.actionConfiguration.mode, accessLevel:properties.actionConfiguration.accessLevel, runningState:properties.runningState}\" -o json"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "set-proactive-demo-sre-agent-autonomous",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "az resource update -g rg-sre-proactive-demo -n sre-agent-proactive-demo --resource-type Microsoft.App/agents --set properties.actionConfiguration.mode=Autonomous"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "set-proactive-demo-sre-agent-autonomous-with-appinsights",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "AI_APPID=$(az resource show -g rg-sre-proactive-demo -n sreproactive-vscode-39596-ai --resource-type microsoft.insights/components --query properties.AppId -o tsv) && AI_CS=$(az resource show -g rg-sre-proactive-demo -n sreproactive-vscode-39596-ai --resource-type microsoft.insights/components --query properties.ConnectionString -o tsv) && az resource update -g rg-sre-proactive-demo -n sre-agent-proactive-demo --resource-type Microsoft.App/agents --set properties.logConfiguration.applicationInsightsConfiguration.appId=$AI_APPID properties.logConfiguration.applicationInsightsConfiguration.connectionString=$AI_CS properties.actionConfiguration.mode=Autonomous"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "run-proactive-reliability-demo",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "cd demos/ProactiveReliabilityAppService && ./scripts/02-run-demo.sh --yes"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "reset-proactive-reliability-demo",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "cd demos/ProactiveReliabilityAppService && ./scripts/03-reset-demo.sh"
+            ],
+            "problemMatcher": []
         }
     ]
 }

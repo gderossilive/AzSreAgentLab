@@ -154,11 +154,13 @@ cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
 ```
 
 Notes:
-- The script will pause for ENTER before swapping; to run non-interactively:
+- The script will pause for ENTER before swapping; to run non-interactively, use `--yes`:
 
 ```bash
-printf '\n' | ./scripts/02-run-demo.sh
+./scripts/02-run-demo.sh --yes
 ```
+
+- If you're using VS Code tasks, you can run the `run-proactive-reliability-demo` task.
 
 - The default probe path is `/api/products`.
 

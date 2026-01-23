@@ -29,6 +29,7 @@ Options:
   --request-count <n>  Number of requests to generate (default: 80)
   --probe-path <path>  Path used for health/latency probes (default: /api/products)
   --dry-run            Only run pre-swap checks and exit
+  --yes                Skip the interactive confirmation prompt before swapping
   --no-wait            Do not poll for recovery
 EOF
 }
@@ -37,6 +38,7 @@ request_count=80
 wait_for_recovery=true
 probe_path="${PROACTIVE_DEMO_PROBE_PATH:-/api/products}"
 dry_run=false
+auto_approve="${PROACTIVE_DEMO_AUTO_APPROVE:-false}"
 
 healthy_ms_threshold="${PROACTIVE_DEMO_HEALTHY_MS:-1200}"
 degraded_ms_threshold="${PROACTIVE_DEMO_DEGRADED_MS:-2000}"
@@ -49,6 +51,8 @@ while [[ $# -gt 0 ]]; do
       probe_path="${2:-}"; shift 2 ;;
     --dry-run)
       dry_run=true; shift ;;
+    --yes)
+      auto_approve=true; shift ;;
     --no-wait)
       wait_for_recovery=false; shift ;;
     -h|--help)
@@ -213,7 +217,13 @@ banner "READY TO SIMULATE BAD DEPLOYMENT"
 echo "  Next step will SWAP staging (bad code) to production."
 echo "  Ensure your SRE Agent is deployed (Privileged) + subagents/triggers configured."
 echo
-read -r -p "  Press ENTER to perform the swap..." _
+if [[ "$auto_approve" == "true" ]]; then
+  log_info "Auto-approve enabled; performing the swap now."
+else
+  if ! read -r -p "  Press ENTER to perform the swap..." _; then
+    log_warn "No interactive stdin detected; proceeding with swap."
+  fi
+fi
 
 log_step "Swapping staging -> production"
 swap_time="$(date +%H:%M:%S)"

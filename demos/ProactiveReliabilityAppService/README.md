@@ -112,6 +112,12 @@ Recommended triggers:
 ./scripts/02-run-demo.sh
 ```
 
+Non-interactive runs (skip the ENTER prompt before swapping):
+
+```bash
+./scripts/02-run-demo.sh --yes
+```
+
 This will:
 - swap `staging` → `production` (bad code to prod)
 - generate load to produce telemetry
@@ -127,6 +133,17 @@ Useful options:
 ./scripts/02-run-demo.sh --probe-path /api/products --dry-run
 ```
 
+### Optional: run via VS Code tasks
+
+If you're using the dev container in VS Code, there are helper tasks under `.vscode/tasks.json`:
+
+- `setup-proactive-reliability-demo`
+- `show-proactive-demo-sre-agent`
+- `run-proactive-reliability-demo`
+- `reset-proactive-reliability-demo`
+
+Use: Terminal → Run Task…
+
 ### 7) Reset back to baseline (optional)
 
 If you swapped bad code into production (or aborted mid-run), reset the app back to the baseline state:
@@ -138,6 +155,58 @@ If you swapped bad code into production (or aborted mid-run), reset the app back
 Notes:
 - By default it probes production vs staging and only swaps if production looks worse.
 - Use `--force-swap` if probing is inconclusive and you still want to swap.
+
+## Troubleshooting: recovery timed out
+
+If `./scripts/02-run-demo.sh` times out waiting for recovery, it usually means the alert/trigger/subagent/action chain did not execute (or the agent can’t act yet).
+
+### 1) Confirm the SRE Agent can actually remediate
+
+- In the SRE Agent portal, confirm **Mode = Privileged** and action mode is **Autonomous**.
+- Confirm the agent is ready (some deployments stay in `BuildingKnowledgeGraph` for a while).
+
+Safe CLI check (no secrets):
+
+```bash
+az resource show -g rg-sre-proactive-demo -n <SRE_AGENT_NAME> --resource-type Microsoft.App/agents \
+  --query "{name:name, actionMode:properties.actionConfiguration.mode, accessLevel:properties.actionConfiguration.accessLevel, runningState:properties.runningState, endpoint:properties.agentEndpoint}" \
+  -o json
+```
+
+### 2) Confirm the slot swap alert fired
+
+- In Azure Portal: Activity log → filter `Microsoft.Web/sites/slots/slotsswap/action` and verify the swap succeeded.
+- Confirm the Activity Log Alert exists and is scoped to `rg-sre-proactive-demo`.
+
+Quick checks:
+
+```bash
+az monitor activity-log alert list -g rg-sre-proactive-demo -o table
+az monitor activity-log list --resource-group rg-sre-proactive-demo \
+  --max-events 30 \
+  --query "[?contains(operationName.value, 'slotsswap')].[eventTimestamp, status.value, operationName.value, resourceGroupName]" \
+  -o table
+```
+
+### 3) Confirm the incident trigger and subagent ran
+
+- In the SRE Agent portal, verify the **incident trigger** fired from the slot swap alert.
+- Confirm `DeploymentHealthCheck` executed and produced a remediation recommendation/action.
+
+### 4) Confirm the baseline exists and is fresh
+
+The health-check subagent compares current response time to a stored baseline (commonly `baseline.txt`).
+
+- Verify the **scheduled baseline trigger** ran recently.
+- Verify `baseline.txt` exists in the agent knowledge store.
+
+### 5) Verify production is still slow (and reset if needed)
+
+If you need to get back to a clean baseline state:
+
+```bash
+./scripts/03-reset-demo.sh
+```
 
 ## Cleanup
 
