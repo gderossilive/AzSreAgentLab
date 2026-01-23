@@ -9,13 +9,13 @@ spec:
 
     Resource Info:
 
-    Web App Resource ID: /subscriptions/<YOUR_SUBSCRIPTION_ID>/resourceGroups/<YOUR_RESOURCE_GROUP>/providers/Microsoft.Web/sites/<YOUR_APP_SERVICE_NAME>
+   Web App Resource ID: /subscriptions/06dbbc7b-2363-4dd4-9803-95d07f1a8d3e/resourceGroups/rg-sre-proactive-demo/providers/Microsoft.Web/sites/sreproactive-vscode-39596
 
-    Application Insights App ID: <YOUR_APP_INSIGHTS_APP_ID>
+   Application Insights App ID: 7610dc41-4e90-41d9-8a3b-e60e0f2d212e
 
-    Application Insights Name: <YOUR_APP_INSIGHTS_NAME>
+   Application Insights Name: sreproactive-vscode-39596-ai
 
-    Application Insights Resource ID: /subscriptions/<YOUR_SUBSCRIPTION_ID>/resourceGroups/<YOUR_RESOURCE_GROUP>/providers/microsoft.insights/components/<YOUR_APP_INSIGHTS_NAME>
+   Application Insights Resource ID: /subscriptions/06dbbc7b-2363-4dd4-9803-95d07f1a8d3e/resourceGroups/rg-sre-proactive-demo/providers/microsoft.insights/components/sreproactive-vscode-39596-ai
 
     Tasks:
 
@@ -24,7 +24,7 @@ spec:
     2. Run App Insights Query:
        requests
        | where timestamp >= ago(2m)
-       | where cloud_RoleName == '<YOUR_APP_SERVICE_NAME>'
+      | where cloud_RoleName == 'sreproactive-vscode-39596'
        | summarize CurrentResponseTime = avg(duration)
        | extend CurrentTimestamp = now()
 
@@ -40,7 +40,7 @@ spec:
     6. Compare Response Times and Auto-Swap. Compare CurrentResponseTime with BaselineResponseTime.
        If CurrentResponseTime is greater than BaselineResponseTime by 20% or more, execute slot swap
        without approval:
-       az webapp deployment slot swap --resource-group <YOUR_RESOURCE_GROUP> --name <YOUR_APP_SERVICE_NAME> --slot staging --target-slot production
+      az webapp deployment slot swap --resource-group rg-sre-proactive-demo --name sreproactive-vscode-39596 --slot staging --target-slot production
 
     7. Create GitHub Issue (If Slow). If response time was slower by 20% or more, do a semantic
        search of the code to identify why response time was slow, create recommendations on what to do,

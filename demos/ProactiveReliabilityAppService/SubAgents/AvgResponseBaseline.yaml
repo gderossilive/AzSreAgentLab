@@ -6,18 +6,18 @@ spec:
     Goal to connect to app insights, find the avg response time and store it to baseline.txt
 
     Resource info
-      Web App Resource ID: /subscriptions/<YOUR_SUBSCRIPTION_ID>/resourceGroups/<YOUR_RESOURCE_GROUP>/providers/Microsoft.Web/sites/<YOUR_APP_SERVICE_NAME>
-      Application Insights App ID: <YOUR_APP_INSIGHTS_APP_ID>
-      Application Insights Name: <YOUR_APP_INSIGHTS_NAME>
+      Web App Resource ID: /subscriptions/06dbbc7b-2363-4dd4-9803-95d07f1a8d3e/resourceGroups/rg-sre-proactive-demo/providers/Microsoft.Web/sites/sreproactive-vscode-39596
+      Application Insights App ID: 7610dc41-4e90-41d9-8a3b-e60e0f2d212e
+      Application Insights Name: sreproactive-vscode-39596-ai
       Application Insights Resource ID:
-        /subscriptions/<YOUR_SUBSCRIPTION_ID>/resourceGroups/<YOUR_RESOURCE_GROUP>/providers/microsoft.insights/components/<YOUR_APP_INSIGHTS_NAME>
+        /subscriptions/06dbbc7b-2363-4dd4-9803-95d07f1a8d3e/resourceGroups/rg-sre-proactive-demo/providers/microsoft.insights/components/sreproactive-vscode-39596-ai
 
     Tasks:
       1. Connect to Application Insights using the Resource ID above.
       2. Run App Insights Query:
          requests
          | where timestamp >= ago(15m)
-         | where cloud_RoleName == '<YOUR_APP_SERVICE_NAME>'
+         | where cloud_RoleName == 'sreproactive-vscode-39596'
          | summarize CurrentResponseTime = avg(duration)
          | extend CurrentTimestamp = now()
       3. From the result, use UploadKnowledgeDocument to create a document named baseline.txt in the
