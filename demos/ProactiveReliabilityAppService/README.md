@@ -11,6 +11,7 @@ Goal: intentionally deploy “bad” code via **slot swap**, have **Azure SRE Ag
 > Notes
 > - Region default is `swedencentral` to match SRE Agent preview constraints used in this lab.
 > - No secrets are stored in this repo. Any Teams/GitHub/Email connector configuration is done in the portal.
+> - Incident reports from automated remediations are documented in the [`incidents/`](incidents/) folder.
 
 ## What gets deployed
 
@@ -213,6 +214,21 @@ If you need to get back to a clean baseline state:
 ```bash
 az group delete -n rg-sre-proactive-demo --yes --no-wait
 ```
+
+## Incident Tracking
+
+Automated remediation actions taken by the SRE Agent are documented in the [`incidents/`](incidents/) folder. Each incident report includes:
+
+- Detection metrics and baseline comparison
+- Timeline of events
+- Automated remediation actions
+- Post-remediation results
+- Root cause analysis and recommendations
+
+**Recent Incidents:**
+- [2026-01-24: High Response Time](incidents/2026-01-24-high-response-time.md) - Sev2, slot swap executed, resolved
+
+See [incidents/README.md](incidents/README.md) for more information on the incident documentation format.
 
 ## Upstream reference
 
