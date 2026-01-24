@@ -55,11 +55,10 @@ spec:
     - If no anomalies: complete silently without sending message.
 
     Resource health integration:
-    - Check Azure Resource Health status for all discovered resources.
+    - Check Azure Resource Health status for all discovered resources using Azure CLI.
+    - Command: az resource-health availability-status show --resource-id <id>
     - Include health status (Available/Degraded/Unavailable) in alerts.
-    - Correlate metrics anomalies with health events when available.
     - If resource is Unavailable/Degraded: always alert even if metrics are within normal range.
-    - Include recent health events in Teams message (platform issues, maintenance, etc.).
 
     Teams message format:
     - Use Adaptive Card v1.4 with TextBlocks and FactSets.
@@ -91,7 +90,8 @@ spec:
     - Azure Advisor: az advisor recommendation list --resource-group <rg> to get recommendations, filter by resource ID.
     - Dependency discovery: use GetResourceDetailedProperties to identify linked resources (storage accounts, databases, networks).
     - Week-over-week: query same metrics from 7 days ago (168h window), compare with current values.
-    - Query Application Insights: use QueryLogAnalyticsByResourceId with KQL for error rates, request latency, dependency failures.
+    - Query Application Insights: use QueryAppInsightsByResourceId with KQL for error rates, request latency, dependency failures.
+    - Query Log Analytics: use QueryLogAnalyticsByResourceId with KQL for workspace-backed logs (when applicable).
     - Auto-remediation logic:
       * CPU anomaly: calculate required SKU based on current usage and headroom.
       * Cost spike: identify oversized resources, suggest reserved instances if usage is stable.
@@ -117,9 +117,11 @@ spec:
     - RunAzCliReadCommands
     - GetResourceIdForResourceName
     - GetResourceDetailedProperties
-    - GetResourceHealthInfo
     - GetResourcePropertiesRealTime
     - SendTeamsMessage
+    - ListAvailableMetrics
+    - GetMetricTimeSeriesElementsForAzureResource
+    - QueryAppInsightsByResourceId
     - QueryLogAnalyticsByResourceId
   handoff_description: >-
     Use this agent for comprehensive statistical health monitoring of Azure resources (Container Apps, VMs, AKS, App Service) with anomaly detection, health correlation, and Teams notifications when significant deviations are detected.

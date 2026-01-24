@@ -209,6 +209,7 @@ Reusable prompt templates live under [.github/prompts/](.github/prompts/).
 
 - Project setup: [.github/prompts/ProjectSetup.prompt.md](.github/prompts/ProjectSetup.prompt.md)
 - Azure Health Check demo setup: [.github/prompts/AzureHealthCheckSetup.prompt.md](.github/prompts/AzureHealthCheckSetup.prompt.md)
+- Azure Health Check demo trigger/run: [.github/prompts/TriggerHealthCheckDemo.prompt.md](.github/prompts/TriggerHealthCheckDemo.prompt.md)
 - Trigger Octopets (Container Apps) anomaly: [.github/prompts/TriggerOctopetsAnomaly.prompt.md](.github/prompts/TriggerOctopetsAnomaly.prompt.md)
 - Proactive Reliability (App Service slot swap) demo run: [.github/prompts/RunProactiveReliabilityDemo.prompt.md](.github/prompts/RunProactiveReliabilityDemo.prompt.md)
 - ServiceNow demo setup: [.github/prompts/ServiceNowAzureResourceHandlerSetup.prompt.md](.github/prompts/ServiceNowAzureResourceHandlerSetup.prompt.md)
