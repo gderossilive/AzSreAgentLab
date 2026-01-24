@@ -15,11 +15,13 @@ Azure SRE Agent detected a critical response time regression (2328% slower than 
 | Time | Event |
 |------|-------|
 | 2026-01-22 16:00:55 | Baseline established: 47.43ms avg response time |
-| 2026-01-24 14:23:57 - 14:28:57 | Pre-swap monitoring window |
+| 2026-01-24 14:23:57 - 14:28:57 | Pre-swap monitoring window (5 min) |
 | 2026-01-24 14:28:57 | High response time detected: 1151.49ms |
 | 2026-01-24 14:32:34 | **Action**: Slot swap executed (staging → production) |
-| 2026-01-24 14:27:37 - 14:32:37 | Post-swap monitoring window |
+| 2026-01-24 14:27:37 - 14:32:37 | Post-swap monitoring window (5 min, overlapping swap) |
 | 2026-01-24 14:32:37 | Post-swap observation: 799.54ms |
+
+**Note**: The post-swap monitoring window begins before the swap execution to capture the trailing 5-minute average at the time of observation.
 
 ## Detection
 
@@ -118,6 +120,8 @@ requests
    - Monitor for any recurring patterns or additional degradation
 
 ## References
+
+> **Note**: Links below reference a demo/lab environment. The subscription IDs and resource identifiers are from a temporary test deployment and are included here for documentation completeness. These resources may no longer exist.
 
 ### Links
 - **Health Check**: https://sreproactive-vscode-39596.azurewebsites.net/health
