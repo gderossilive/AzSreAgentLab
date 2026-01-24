@@ -123,6 +123,131 @@ This will:
 - generate load to produce telemetry
 - wait for SRE Agent remediation (swap back)
 
+Typical session (end-to-end):
+
+- Preparation (before any alert/incident)
+  - If you're using Copilot Chat, you can run the prompt ` /RunProactiveReliabilityDemo ` to get a guided, end-to-end prep + run checklist (source: [.github/prompts/RunProactiveReliabilityDemo.prompt.md](.github/prompts/RunProactiveReliabilityDemo.prompt.md)).
+  - Confirm `demo-config.json` exists and points to the expected App Service + `staging` slot.
+  - Confirm baseline state: production is faster than staging on the probe path (default `/api/products`).
+  - Confirm Azure CLI access: logged in and the selected subscription matches `demo-config.json`.
+  - Confirm the SRE Agent is ready to act:
+    - Deployed in the same resource group as the App Service
+    - Access level is **Privileged** and action mode is **Autonomous**
+    - Required subagents + triggers are configured (baseline writer + swap-alert health check)
+    - A fresh baseline artifact exists (commonly `baseline.txt`)
+
+  Quick prep commands (safe, no secrets):
+
+  ```bash
+  cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
+
+  # Show current demo values
+  python3 - <<'PY'
+  import json
+  j=json.load(open('demo-config.json'))
+  for k in ['SubscriptionId','Location','ResourceGroupName','AppServiceName','ProductionUrl','StagingUrl','ApplicationInsightsName']:
+    print(f"{k}={j.get(k)}")
+  PY
+
+  # Sanity check: prod should be faster than staging
+  PROD=$(python3 -c "import json;print(json.load(open('demo-config.json'))['ProductionUrl'].rstrip('/'))")
+  STAGING=$(python3 -c "import json;print(json.load(open('demo-config.json'))['StagingUrl'].rstrip('/'))")
+  curl -sS -o /dev/null -w "prod code=%{http_code} time=%{time_total}s\n" "$PROD/api/products"
+  curl -sS -o /dev/null -w "staging code=%{http_code} time=%{time_total}s\n" "$STAGING/api/products"
+
+  # Confirm Azure context
+  az account show --query '{subscriptionId:id, subscriptionName:name, tenantId:tenantId, user:user.name}' -o json
+
+  # Confirm SRE Agent status in the demo RG
+  DEMO_RG="$(python3 -c "import json;print(json.load(open('demo-config.json'))['ResourceGroupName'])")"
+  az resource list -g "$DEMO_RG" --resource-type Microsoft.App/agents --query "[].name" -o tsv
+
+  SRE_AGENT_NAME="$(az resource list -g "$DEMO_RG" --resource-type Microsoft.App/agents --query "[0].name" -o tsv)"
+  az resource show -g "$DEMO_RG" -n "$SRE_AGENT_NAME" --resource-type Microsoft.App/agents \
+    --query '{name:name, endpoint:properties.agentEndpoint, actionMode:properties.actionConfiguration.mode, accessLevel:properties.actionConfiguration.accessLevel, runningState:properties.runningState}' \
+    -o json
+  ```
+- Run
+  - Swap `staging` → `production` and generate load (typically via `./scripts/02-run-demo.sh --yes`).
+- Detection + triage (after the incident fires)
+  - The agent receives an incident like “Detected Sev2 alert: Proactive Reliability High Response Time” for the target App Service.
+  - It queries Application Insights over the incident window (for example, the last 5 minutes) to compute current average response time.
+  - It retrieves the most recent stored baseline (for example from `baseline.txt`).
+  - It compares timestamps (current must be newer) and response time vs baseline (for example, >20% regression threshold) to decide whether remediation is required.
+- Remediation + verification
+  - It verifies the app/slot state (staging slot present; app reachable).
+  - It executes the remediation slot swap (swap `staging` → `production`, or swap back depending on which slot is healthy).
+  - It re-queries Application Insights to confirm improvement.
+- Comms + closure
+  - It posts a short deployment/health summary (for example to Teams) with links/metrics.
+  - Optionally, it opens a GitHub issue capturing findings and recommendations.
+  - It records an incident closure note (for example: “Impact cleared. App Service response time back to baseline; no residual impact.”).
+
+ASCII flow (typical):
+
+```text
+  +------------------------------+
+  | Preparation checklist         |
+  | - demo-config.json            |
+  | - prod faster than staging    |
+  | - az login + right sub        |
+  | - agent ready + baseline.txt  |
+  +--------------+---------------+
+                 |
+                 v
+  +------------------------------+
+  | Detected Sev2 slot-swap alert |
+  +--------------+---------------+
+                 |
+                 v
+  +------------------------------+
+  | Query Application Insights   |
+  | (current avg response time)  |
+  +--------------+---------------+
+                 |
+                 v
+  +------------------------------+
+  | Retrieve baseline.txt        |
+  | (baseline avg + timestamp)   |
+  +--------------+---------------+
+                 |
+                 v
+        +----------------------+
+        | Compare current vs   |
+        | baseline + threshold |
+        +---------+------------+
+                  |
+        +---------+---------+
+        |                   |
+        v                   v
+  +----------------+  +-----------------------+
+  | No remediation |  | Remediation required  |
+  | (monitor only) |  +----------+------------+
+  +--------+-------+             |
+           |                     v
+           |          +-----------------------+
+           |          | Verify slots/app      |
+           |          | (prod/staging health) |
+           |          +----------+------------+
+           |                     |
+           |                     v
+           |          +-----------------------+
+           |          | Execute slot swap     |
+           |          +----------+------------+
+           |                     |
+           |                     v
+           |          +-----------------------+
+           |          | Re-query App Insights |
+           |          | (confirm improvement) |
+           |          +----------+------------+
+           |                     |
+           v                     v
+  +----------------+   +----------------------+
+  | Post summary   |   | Post summary         |
+  | (Teams/email)  |   | + GitHub issue (opt) |
+  +----------------+   +----------------------+
+```
+
 Useful options:
 
 ```bash
