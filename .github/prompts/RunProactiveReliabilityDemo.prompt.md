@@ -1,23 +1,23 @@
 # RunProactiveReliabilityDemo
 
-## Description
-Run the **Proactive Reliability (App Service slot swap)** demo in this repo.
+## Goal
+Run the **Proactive Reliability (App Service slot swap)** demo runner script:
 
-What it does:
-- Deploys an App Service + `staging` slot + App Insights + an Activity Log Alert for slot swap.
-- Publishes a **GOOD (fast)** build to `production` and a **BAD (slow)** build to `staging`.
-- Performs a slot swap to push the bad build into production, generates load, and waits for Azure SRE Agent to detect regression and remediate by swapping back.
+- Swap `staging` → `production` so the “BAD/slow” build becomes production.
+- Generate load so telemetry + the slot-swap alert can fire.
+- Wait for Azure SRE Agent to detect the regression and remediate (swap back).
 
-This prompt summarizes the exact workflow and values used in the session on 2026-01-23.
+This prompt intentionally does **not** cover deployment or reset scripts. It focuses only on running the runner script with its prerequisites already satisfied.
 
 ## Inputs (fill at runtime)
-Avoid pasting environment-specific identifiers into this prompt (subscription IDs, app names, URLs, etc.).
+Avoid hardcoding environment-specific identifiers into this prompt.
 
-At runtime, collect values from:
-- Azure CLI current account (`az account show`)
-- The demo output file: `demos/ProactiveReliabilityAppService/demo-config.json`
+At runtime, source values from:
 
-Quick way to print the current demo values (no secrets, but keep them out of reusable docs):
+- Azure CLI current account: `az account show`
+- Demo config file: `demos/ProactiveReliabilityAppService/demo-config.json`
+
+Print the current demo values (safe, no secrets):
 
 ```bash
 cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
@@ -29,166 +29,132 @@ for k in ['SubscriptionId','Location','ResourceGroupName','AppServiceName','Prod
 PY
 ```
 
-## Useful discovery commands (sanitized workflow)
-These commands help you retrieve the values you need *at runtime* without hardcoding them in docs.
+## Prerequisites (must be true before running)
 
-### 1) Confirm current subscription/tenant (sanitized)
+### 1) App + slots already exist and match the expected “baseline”
+
+- `demo-config.json` exists and points to a working App Service + `staging` slot.
+- Production responds **faster** than staging on the probe path (default `/api/products`).
+
+Quick sanity check (should show production faster than staging):
+
+```bash
+cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
+
+PROD=$(python3 -c "import json;print(json.load(open('demo-config.json'))['ProductionUrl'].rstrip('/'))")
+STAGING=$(python3 -c "import json;print(json.load(open('demo-config.json'))['StagingUrl'].rstrip('/'))")
+
+curl -sS -o /dev/null -w "prod code=%{http_code} time=%{time_total}s\n" "$PROD/api/products"
+curl -sS -o /dev/null -w "staging code=%{http_code} time=%{time_total}s\n" "$STAGING/api/products"
+```
+
+### 2) Azure CLI access
+
+- Logged in: `az login`
+- Correct subscription selected (match demo-config.json):
+
 ```bash
 az account show --query '{subscriptionId:id, subscriptionName:name, tenantId:tenantId, user:user.name}' -o json
 ```
 
-### 2) Load demo-config.json into shell variables
+### 3) Azure SRE Agent is ready to act on this app
+
+You need an SRE Agent deployed in the **same resource group** as the App Service referenced by `demo-config.json`.
+
+Minimum requirements:
+
+- Agent access level is **Privileged** (able to perform slot swap remediation).
+- Action mode is **Autonomous**.
+- The agent has the required subagents + triggers configured in the portal.
+- A baseline exists and is fresh (for example, `baseline.txt` created by a scheduled baseline subagent).
+
+Discover the agent and show basic status (safe):
+
 ```bash
 cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
 
-export DEMO_RG="$(python3 -c "import json;print(json.load(open('demo-config.json'))['ResourceGroupName'])")"
-export DEMO_APP="$(python3 -c "import json;print(json.load(open('demo-config.json'))['AppServiceName'])")"
-export DEMO_AI="$(python3 -c "import json;print(json.load(open('demo-config.json'))['ApplicationInsightsName'])")"
+DEMO_RG="$(python3 -c "import json;print(json.load(open('demo-config.json'))['ResourceGroupName'])")"
 
-echo "DEMO_RG=$DEMO_RG"
-echo "DEMO_APP=$DEMO_APP"
-echo "DEMO_AI=$DEMO_AI"
-```
-
-### 3) Resource IDs (safe to display)
-App Service resource ID:
-```bash
-az resource show -g "$DEMO_RG" -n "$DEMO_APP" --resource-type Microsoft.Web/sites --query id -o tsv
-```
-
-App Insights resource ID:
-```bash
-az resource show -g "$DEMO_RG" -n "$DEMO_AI" --resource-type microsoft.insights/components --query id -o tsv
-```
-
-### 4) App Insights AppId (needed by the SRE Agent tools)
-```bash
-az resource show -g "$DEMO_RG" -n "$DEMO_AI" --resource-type microsoft.insights/components --query properties.AppId -o tsv
-```
-
-### 5) Find SRE Agent in the demo RG (safe to display)
-List agent resources:
-```bash
 az resource list -g "$DEMO_RG" --resource-type Microsoft.App/agents --query "[].name" -o tsv
-```
 
-Show agent endpoint + action mode:
-```bash
-export SRE_AGENT_NAME="$(az resource list -g "$DEMO_RG" --resource-type Microsoft.App/agents --query "[0].name" -o tsv)"
+SRE_AGENT_NAME="$(az resource list -g "$DEMO_RG" --resource-type Microsoft.App/agents --query "[0].name" -o tsv)"
 az resource show -g "$DEMO_RG" -n "$SRE_AGENT_NAME" --resource-type Microsoft.App/agents \
   --query '{name:name, endpoint:properties.agentEndpoint, actionMode:properties.actionConfiguration.mode, accessLevel:properties.actionConfiguration.accessLevel, runningState:properties.runningState}' -o json
 ```
 
-### 6) (Sensitive) App Insights connection string
-Only needed if you must update the SRE Agent log configuration. Treat the output as sensitive and do not paste it into prompts/docs.
-```bash
-az resource show -g "$DEMO_RG" -n "$DEMO_AI" --resource-type microsoft.insights/components --query properties.ConnectionString -o tsv
-```
-
-## Checklist
-
-### 0) Prereqs
-- Azure CLI logged in: `az login`
-- Correct subscription selected:
-  - `az account set --subscription <SUBSCRIPTION_ID>`
-- You have permission to deploy to the demo RG (Contributor is fine).
-
-### 1) (Re)deploy infra + publish GOOD/BAD app versions
-From repo root:
+If action mode is not Autonomous:
 
 ```bash
-cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
-./scripts/01-setup-demo.sh \
-  --resource-group <DEMO_RESOURCE_GROUP> \
-  --app-service-name <APP_SERVICE_NAME> \
-  --location <AZURE_REGION> \
-  --subscription-id <SUBSCRIPTION_ID>
-```
-
-Expected:
-- Updates/creates `demo-config.json`.
-- `production` responds fast and `staging` responds slow.
-
-### 2) Ensure SRE Agent exists in the SAME demo RG and can remediate
-Verify the agent exists:
-
-```bash
-az resource list -g <DEMO_RESOURCE_GROUP> --resource-type Microsoft.App/agents -o table
-```
-
-Ensure action mode is `Autonomous`:
-
-```bash
-az resource update \
-  -g <DEMO_RESOURCE_GROUP> \
-  -n <SRE_AGENT_NAME> \
-  --resource-type Microsoft.App/agents \
+az resource update -g "$DEMO_RG" -n "$SRE_AGENT_NAME" --resource-type Microsoft.App/agents \
   --set properties.actionConfiguration.mode=Autonomous
 ```
 
-Note:
-- If you see a validation error about App Insights (`AppId and ConnectionString fields must be provided together`), update the agent’s `properties.logConfiguration.applicationInsightsConfiguration` with both values (AppId + ConnectionString) at the same time.
+Notes on portal setup (you do this in the SRE Agent portal):
 
-### 3) Configure subagents + triggers in the SRE Agent portal
-Templates live here:
-- `demos/ProactiveReliabilityAppService/SubAgents/AvgResponseBaseline.yaml`
-- `demos/ProactiveReliabilityAppService/SubAgents/DeploymentHealthCheck.yaml`
-- `demos/ProactiveReliabilityAppService/SubAgents/DeploymentReporter.yaml`
+- Subagent templates are in `demos/ProactiveReliabilityAppService/SubAgents/`.
+- Recommended triggers:
+  - Scheduled (every 15m): baseline task → writes `baseline.txt`
+  - Incident trigger: slot swap Activity Log Alert → deployment health check
 
-Replace placeholders in the YAML templates using values from `demo-config.json`.
+## Run the demo
 
-You still may need to edit `DeploymentReporter.yaml` to remove or replace:
-- `<YOUR_TEAMS_CHANNEL_URL>`
-- `<YOUR_EMAIL_ADDRESS>`
-
-Recommended triggers (portal):
-- Scheduled trigger (every 15m) → `AvgResponseTime` (writes `baseline.txt`)
-- Incident trigger (slot swap activity log alert) → `DeploymentHealthCheck`
-- Optional scheduled trigger (daily) → `DeploymentReporter`
-
-### 4) Run the live demo (swap + load + wait)
+Run interactively (will prompt before swapping):
 
 ```bash
 cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
 ./scripts/02-run-demo.sh
 ```
 
-Notes:
-- The script will pause for ENTER before swapping; to run non-interactively, use `--yes`:
-
-```bash
-./scripts/02-run-demo.sh --yes
-```
-
-- If you're using VS Code tasks, you can run the `run-proactive-reliability-demo` task.
-
-- The default probe path is `/api/products`.
-
-### 5) If recovery times out
-In this session, the runner timed out waiting for recovery.
-
-Do these checks:
-- In the SRE Agent portal, confirm the incident trigger fired and `DeploymentHealthCheck` ran.
-- Confirm `AvgResponseTime` baseline ran recently and `baseline.txt` exists in the agent knowledge store.
-- Confirm the slot swap Activity Log Alert exists and is scoped to `rg-sre-proactive-demo`.
-- Confirm the agent action mode is `Autonomous`.
-
-### 6) Reset back to baseline (GOOD in prod, BAD in staging)
+Run non-interactively (recommended for demos):
 
 ```bash
 cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
-./scripts/03-reset-demo.sh
+./scripts/02-run-demo.sh --yes
 ```
 
-If probing is inconclusive and you still want to force it:
+Useful options:
+
+- `--dry-run`: validate current prod/staging behavior without swapping.
+- `--no-wait`: perform swap + load but do not poll for recovery.
+- `--request-count <n>`: increase/decrease traffic.
+- `--probe-path <path>`: if your API path differs.
+
+## What “success” looks like
+
+- Script confirms production is **fast** and staging is **slow**.
+- Script swaps staging → production, then production becomes **slow**.
+- Within a few minutes, the slot swap **alert** and the **incident trigger** fire.
+- SRE Agent runs the health-check workflow and remediates by swapping back.
+- Script observes production return to “healthy” latency before timeout.
+
+## Troubleshooting (if recovery times out)
+
+1) Verify the swap activity happened (safe, avoids `az monitor` if your CLI module is unavailable):
 
 ```bash
-./scripts/03-reset-demo.sh --force-swap
+SUB=$(az account show --query id -o tsv)
+START=$(date -u -d '90 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+
+FILTER=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=\"()'=$ ,\"))" \
+  "eventTimestamp ge '$START' and resourceGroupName eq '$DEMO_RG'")
+
+az rest --method get --url \
+  "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Insights/eventtypes/management/values?api-version=2015-04-01&\$filter=$FILTER" \
+  --query "value[?contains(operationName.value, 'slotsswap')].{time:eventTimestamp,status:status.value,op:operationName.value,caller:caller}" -o table
 ```
 
-## Cleanup
-Delete the demo RG:
+2) In the SRE Agent portal:
 
-```bash
-az group delete -n <DEMO_RESOURCE_GROUP> --yes --no-wait
-```
+- Confirm the incident trigger fired from the slot swap alert.
+- Confirm the health-check subagent ran.
+- Confirm the baseline artifact exists and is recent.
+
+3) Confirm agent readiness:
+
+- If `runningState` stays `BuildingKnowledgeGraph`, remediation may be delayed.
+- Confirm access level is Privileged and action mode is Autonomous.
+
+4) Confirm production is actually degraded:
+
+- If production isn’t consistently slower than your baseline/threshold, the agent may not decide to remediate.
+
