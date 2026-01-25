@@ -9,14 +9,23 @@ source "$(dirname "$0")/load-env.sh"
 
 : "${OCTOPETS_RG_NAME:?Missing OCTOPETS_RG_NAME. Run deployment scripts first.}"
 
-# Check if this is a production environment
-env_type="${ASPNETCORE_ENVIRONMENT:-Production}"
+# Check the container app's actual ASPNETCORE_ENVIRONMENT setting
+echo "Checking container app environment..."
+container_env=$(az containerapp show \
+  --name octopetsapi \
+  --resource-group "$OCTOPETS_RG_NAME" \
+  --query "properties.template.containers[0].env[?name=='ASPNETCORE_ENVIRONMENT'].value | [0]" \
+  -o tsv 2>/dev/null || echo "")
+
+# If ASPNETCORE_ENVIRONMENT is not set, check local env or default to Production
+env_type="${container_env:-${ASPNETCORE_ENVIRONMENT:-Production}}"
+
 if [[ "$env_type" == "Production" ]]; then
   echo "❌ ERROR: Cannot enable MEMORY_ERRORS in Production environment!"
   echo "This is a demo/testing feature that causes severe memory issues (INC0010041)."
   echo ""
-  echo "To override (NOT RECOMMENDED), set ASPNETCORE_ENVIRONMENT to a non-production value:"
-  echo "  export ASPNETCORE_ENVIRONMENT=Development"
+  echo "The container app is currently configured with ASPNETCORE_ENVIRONMENT=Production."
+  echo "To use this demo feature, first redeploy with a non-production environment setting."
   echo ""
   exit 1
 fi
