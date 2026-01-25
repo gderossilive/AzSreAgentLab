@@ -52,12 +52,13 @@ resource serviceNowActionGroup 'microsoft.insights/actionGroups@2023-01-01' = {
 }
 
 // Alert Rule 1: High Memory Usage (80% threshold)
+// INC0010041: Switched to MemoryPercentage for adaptive scaling regardless of container memory configuration
 resource highMemoryAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   name: 'High Memory Usage - Octopets API'
   location: 'global'
   tags: tags
   properties: {
-    description: 'Triggers when backend container app memory usage exceeds 80% for 5 minutes'
+    description: 'Triggers when backend container app memory usage exceeds 80% for 5 minutes (INC0010041 fix: using MemoryPercentage instead of hardcoded bytes)'
     severity: 2  // Warning
     enabled: true
     scopes: [
@@ -70,10 +71,10 @@ resource highMemoryAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
       allOf: [
         {
           name: 'MemoryUsageHigh'
-          metricName: 'WorkingSetBytes'
+          metricName: 'MemoryPercentage'
           metricNamespace: 'Microsoft.App/containerApps'
           operator: 'GreaterThan'
-          threshold: 858993459  // 80% of 1GB (1073741824 bytes)
+          threshold: 80  // 80% of configured container memory
           timeAggregation: 'Average'
           criterionType: 'StaticThresholdCriterion'
         }
@@ -95,12 +96,13 @@ resource highMemoryAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
 }
 
 // Alert Rule 2: Very High Memory Usage (90% threshold)
+// INC0010041: Switched to MemoryPercentage for adaptive scaling regardless of container memory configuration
 resource veryHighMemoryAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   name: 'Very High Memory Usage - Octopets API'
   location: 'global'
   tags: tags
   properties: {
-    description: 'Triggers when backend container app memory usage exceeds 90% for 5 minutes'
+    description: 'Triggers when backend container app memory usage exceeds 90% for 5 minutes (INC0010041 fix: using MemoryPercentage instead of hardcoded bytes)'
     severity: 1  // Error
     enabled: true
     scopes: [
@@ -113,10 +115,10 @@ resource veryHighMemoryAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
       allOf: [
         {
           name: 'MemoryUsageVeryHigh'
-          metricName: 'WorkingSetBytes'
+          metricName: 'MemoryPercentage'
           metricNamespace: 'Microsoft.App/containerApps'
           operator: 'GreaterThan'
-          threshold: 966367641  // 90% of 1GB (1073741824 bytes)
+          threshold: 90  // 90% of configured container memory
           timeAggregation: 'Average'
           criterionType: 'StaticThresholdCriterion'
         }

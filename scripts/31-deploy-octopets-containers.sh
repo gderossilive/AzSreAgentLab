@@ -66,8 +66,10 @@ api_app="octopetsapi"
 fe_app="octopetsfe"
 
 echo "Updating backend container app: $api_app"
+# INC0010041: Enforce MEMORY_ERRORS=false and add .NET GC limits to prevent memory issues
 az containerapp update -g "$OCTOPETS_RG_NAME" -n "$api_app" \
   --image "$api_tag" \
+  --set-env-vars "MEMORY_ERRORS=false" "DOTNET_GCHeapHardLimitPercent=70" \
   --query "properties.configuration.ingress.fqdn" -o tsv >/dev/null || \
 az containerapp create -g "$OCTOPETS_RG_NAME" -n "$api_app" \
   --environment "$cae_name" \
@@ -76,7 +78,7 @@ az containerapp create -g "$OCTOPETS_RG_NAME" -n "$api_app" \
   --registry-identity system \
   --ingress external \
   --target-port 8080 \
-  --env-vars "EnableSwagger=true" "ASPNETCORE_URLS=http://+:8080" \
+  --env-vars "EnableSwagger=true" "ASPNETCORE_URLS=http://+:8080" "MEMORY_ERRORS=false" "DOTNET_GCHeapHardLimitPercent=70" "ASPNETCORE_ENVIRONMENT=Production" \
   --query "properties.configuration.ingress.fqdn" -o tsv >/dev/null
 
 api_fqdn="$(az containerapp show -g "$OCTOPETS_RG_NAME" -n "$api_app" --query "properties.configuration.ingress.fqdn" -o tsv)"
