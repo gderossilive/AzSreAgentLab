@@ -44,6 +44,9 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' existing = {
 }
 
 // Update container app with auto-scaling configuration
+// NOTE: This template updates the entire container app configuration.
+// It preserves existing containers and configuration but replaces the scale settings.
+// Ensure this is the authoritative source for scaling configuration to avoid drift.
 resource containerAppUpdate 'Microsoft.App/containerApps@2023-05-01' = {
   name: backendAppName
   location: location

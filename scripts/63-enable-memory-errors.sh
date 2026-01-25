@@ -9,12 +9,15 @@ source "$(dirname "$0")/load-env.sh"
 
 : "${OCTOPETS_RG_NAME:?Missing OCTOPETS_RG_NAME. Run deployment scripts first.}"
 
+# Container app name (configurable via env or default to octopetsapi)
+container_app_name="${OCTOPETS_API_APP_NAME:-octopetsapi}"
+
 # Check the container app's actual ASPNETCORE_ENVIRONMENT setting
 echo "Checking container app environment..."
 container_env=$(az containerapp show \
-  --name octopetsapi \
+  --name "$container_app_name" \
   --resource-group "$OCTOPETS_RG_NAME" \
-  --query "properties.template.containers[0].env[?name=='ASPNETCORE_ENVIRONMENT'].value | [0]" \
+  --query "properties.template.containers[?name=='$container_app_name'].env[?name=='ASPNETCORE_ENVIRONMENT'].value | [0] | [0]" \
   -o tsv 2>/dev/null || echo "")
 
 # If ASPNETCORE_ENVIRONMENT is not set, check local env or default to Production
@@ -33,6 +36,7 @@ fi
 # Additional confirmation prompt
 echo "⚠️  WARNING: This will enable memory stress testing (allocates 1GB per API call)"
 echo "Resource Group: $OCTOPETS_RG_NAME"
+echo "Container App: $container_app_name"
 echo "Environment: $env_type"
 echo ""
 read -p "Are you sure you want to continue? (yes/no): " confirmation
@@ -42,9 +46,9 @@ if [[ "$confirmation" != "yes" ]]; then
   exit 0
 fi
 
-echo "Enabling MEMORY_ERRORS on octopetsapi..."
+echo "Enabling MEMORY_ERRORS on $container_app_name..."
 az containerapp update \
-  --name octopetsapi \
+  --name "$container_app_name" \
   --resource-group "$OCTOPETS_RG_NAME" \
   --set-env-vars "MEMORY_ERRORS=true" \
   --output none
