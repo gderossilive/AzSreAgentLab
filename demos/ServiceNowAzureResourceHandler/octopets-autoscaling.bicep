@@ -11,6 +11,9 @@ param resourceGroupName string
 @description('Name of the backend Container App')
 param backendAppName string = 'octopetsapi'
 
+@description('Location for the container app')
+param location string = 'swedencentral'
+
 @description('Minimum number of replicas')
 param minReplicas int = 1
 
@@ -43,8 +46,8 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' existing = {
 // Update container app with auto-scaling configuration
 resource containerAppUpdate 'Microsoft.App/containerApps@2023-05-01' = {
   name: backendAppName
-  location: containerApp.location
-  tags: union(containerApp.tags, tags)
+  location: location
+  tags: tags
   properties: {
     environmentId: containerApp.properties.environmentId
     configuration: containerApp.properties.configuration

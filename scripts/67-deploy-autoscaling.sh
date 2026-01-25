@@ -12,6 +12,7 @@ source "$(dirname "$0")/load-env.sh"
 
 : "${AZURE_SUBSCRIPTION_ID:?Missing AZURE_SUBSCRIPTION_ID}"
 : "${OCTOPETS_RG_NAME:?Missing OCTOPETS_RG_NAME}"
+: "${AZURE_LOCATION:-swedencentral}"
 
 echo "Deploying auto-scaling configuration for Octopets API..."
 
@@ -22,6 +23,7 @@ az deployment group create \
     subscriptionId="$AZURE_SUBSCRIPTION_ID" \
     resourceGroupName="$OCTOPETS_RG_NAME" \
     backendAppName="octopetsapi" \
+    location="${AZURE_LOCATION}" \
     minReplicas=1 \
     maxReplicas=3 \
     cpuScaleThreshold=70 \
