@@ -296,6 +296,18 @@ curl -X GET \
   | jq '.result[] | {number, short_description, state, created: .sys_created_on}'
 ```
 
+To retrieve the incident `sys_id` (required by sys_id-based operations like resolving/closing):
+```bash
+# Lookup sys_id from an incident number
+INC="INC0010041"
+
+curl -X GET \
+  -H "Accept: application/json" \
+  -u "$SERVICENOW_USERNAME:$SERVICENOW_PASSWORD" \
+  "https://$SERVICENOW_INSTANCE.service-now.com/api/now/table/incident?sysparm_query=number=$INC&sysparm_fields=number,sys_id" \
+  | jq -r '.result[0] | {number, sys_id}'
+```
+
 Note: ServiceNow developer instances can hibernate. If the instance is asleep, API calls may return an HTML “instance hibernating” page instead of JSON. Wake the instance by signing in to the ServiceNow UI.
 
 **Expected Incident Fields**:
