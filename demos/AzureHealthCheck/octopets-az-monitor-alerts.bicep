@@ -148,6 +148,10 @@ resource apiHttp5xx 'Microsoft.Insights/metricAlerts@2018-03-01' = {
           threshold: http5xxRequestsThreshold
           timeAggregation: 'Total'
           criterionType: 'StaticThresholdCriterion'
+          // IMPORTANT: Use statusCodeCategory dimension with value '5xx' for Container Apps
+          // This filters requests to only those with 5xx HTTP status codes (500-599)
+          // Do NOT use statusCode='5*' wildcard or statusCodeCategory='2xx' which would
+          // incorrectly fire on successful requests instead of errors
           dimensions: [
             {
               name: 'statusCodeCategory'
@@ -256,6 +260,8 @@ resource feHttp5xx 'Microsoft.Insights/metricAlerts@2018-03-01' = {
           threshold: http5xxRequestsThreshold
           timeAggregation: 'Total'
           criterionType: 'StaticThresholdCriterion'
+          // IMPORTANT: Use statusCodeCategory='5xx' to filter only 5xx errors
+          // Do NOT use '2xx' which would incorrectly fire on successful requests
           dimensions: [
             {
               name: 'statusCodeCategory'

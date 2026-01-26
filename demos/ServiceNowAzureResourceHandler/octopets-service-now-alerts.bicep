@@ -164,10 +164,10 @@ resource highErrorRateAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
           criterionType: 'StaticThresholdCriterion'
           dimensions: [
             {
-              name: 'statusCode'
+              name: 'statusCodeCategory'
               operator: 'Include'
               values: [
-                '5*'  // Server errors
+                '5xx'  // Server errors (5xx)
               ]
             }
           ]
@@ -216,10 +216,10 @@ resource criticalErrorRateAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
           criterionType: 'StaticThresholdCriterion'
           dimensions: [
             {
-              name: 'statusCode'
+              name: 'statusCodeCategory'
               operator: 'Include'
               values: [
-                '5*'  // Server errors
+                '5xx'  // Server errors (5xx)
               ]
             }
           ]

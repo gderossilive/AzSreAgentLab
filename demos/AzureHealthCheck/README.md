@@ -90,6 +90,33 @@ In a typical run, you (1) configure the Teams webhook + SRE Agent connector, (2)
 
 ## Configuration Steps
 
+### Optional: Deploy Azure Monitor Metric Alerts
+
+The lab includes a Bicep template for deploying Azure Monitor metric alerts that can complement the scheduled health checks with real-time alerting.
+
+**What it deploys**:
+- CPU usage alerts for Octopets API and Frontend
+- Response time alerts for both components
+- **HTTP 5xx error alerts** - correctly configured to fire only on server errors (5xx), not successful requests (2xx)
+
+**Deploy alerts**:
+```bash
+# After deploying Octopets infrastructure
+source scripts/load-env.sh
+./scripts/66-deploy-octopets-metric-alerts.sh
+```
+
+**Important**: The 5xx alerts use the correct `statusCodeCategory='5xx'` dimension filter. Do **not** use `statusCode='5*'` wildcards or `statusCodeCategory='2xx'`, as these would cause false alerts on normal traffic instead of actual errors.
+
+**To verify deployed alerts**:
+```bash
+az resource list -g $OCTOPETS_RG_NAME \
+  --resource-type Microsoft.Insights/metricAlerts \
+  --query '[].name' -o table
+```
+
+Bicep template: [`octopets-az-monitor-alerts.bicep`](./octopets-az-monitor-alerts.bicep)
+
 ### Step 1: Create Teams Webhook via Power Automate
 
 1. **Open Microsoft Teams** and navigate to the channel where you want to receive alerts
