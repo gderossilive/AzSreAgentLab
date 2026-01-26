@@ -80,6 +80,7 @@ The SRE Agent's managed identity has **High access** with these roles scoped **o
 
 Notes:
 - Local Docker is not required; container images are built remotely using Azure Container Registry (`az acr build`).
+- For hosted load generation with Azure Load Testing (Apache JMeter), see [docs/azure-load-testing-jmeter.md](docs/azure-load-testing-jmeter.md).
 
 Permissions needed (common working combinations):
 - Ability to run subscription-scope deployments that create resource groups (`az deployment sub create`)
