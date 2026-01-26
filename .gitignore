@@ -2,9 +2,11 @@
 **/.azure/
 
 # Bicep compiled outputs (ARM JSON templates)
-**/*.bicep.json
-# Keep only explicitly named templates, exclude Bicep build artifacts
-demos/**/*.json
+# Only exclude JSON files that share the same base name as a Bicep file
+# e.g., octopets-az-monitor-alerts.json is excluded if octopets-az-monitor-alerts.bicep exists
+demos/AzureHealthCheck/*.json
+demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.json
+# Keep ProactiveReliabilityAppService JSON files (they are intentional config/templates)
 
 # Instance-specific project memory (do not commit)
 .docs/memory.md
