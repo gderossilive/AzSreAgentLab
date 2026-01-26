@@ -20,12 +20,14 @@ spec:
     - sys_id is a GUID-like value. Use sys_id for GetServiceNowIncidentById,
       AcknowledgeServiceNowIncident, ResolveServiceNowIncident.
     - Never pass an INC number to sys_id-based tools (it will 404).
-    - If only INC is available, look up sys_id first via Table API:
-      GET https://<instance>.service-now.com/api/now/table/incident?sysparm_query=number=INC0010041&sysparm_fields=number,sys_id
-      If lookup cannot be done, ask: "Please provide the sys_id for INC0010041".
+    - If only an INC number is available, look up the incident FIRST using GetServiceNowIncident
+      (number-based) and extract its sys_id from the returned record.
+    - Only ask the user for sys_id if GetServiceNowIncident fails to find the incident or does not
+      return sys_id.
 
     Workflow:
-    1) Intake: obtain incident sys_id (via lookup if needed) and fetch details.
+     1) Intake: if given an INC number, use GetServiceNowIncident to obtain sys_id; then fetch full
+       details via GetServiceNowIncidentById.
     2) Diagnostics: query App Insights/Log Analytics + relevant Azure metrics; include exact KQL,
        UTC windows, counts, correlation IDs, and a short evidence-backed summary.
     3) Source/IaC: inspect available repo/IaC inputs; propose a minimal fix and note IaC/config
@@ -45,7 +47,6 @@ spec:
     - PlotBarChart
     - PlotPieChart
     - GetCurrentUtcTime
-    - GetServiceNowIncidentById
     - QueryAppInsightsByResourceId
     - QueryLogAnalyticsByResourceId
     - RunAzCliReadCommands
