@@ -1,6 +1,11 @@
 .env
 **/.azure/
 
+# Bicep compiled outputs (ARM JSON templates)
+**/*.bicep.json
+# Keep only explicitly named templates, exclude Bicep build artifacts
+demos/**/*.json
+
 # Instance-specific project memory (do not commit)
 .docs/memory.md
 
