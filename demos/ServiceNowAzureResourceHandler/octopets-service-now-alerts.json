@@ -1,0 +1,330 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "5674080916850349998"
+    }
+  },
+  "parameters": {
+    "subscriptionId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure subscription ID where resources are deployed"
+      }
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group name containing the Octopets Container Apps"
+      }
+    },
+    "backendAppName": {
+      "type": "string",
+      "defaultValue": "octopetsapi",
+      "metadata": {
+        "description": "Name of the backend Container App"
+      }
+    },
+    "frontendAppName": {
+      "type": "string",
+      "defaultValue": "octopetsfe",
+      "metadata": {
+        "description": "Name of the frontend Container App"
+      }
+    },
+    "serviceNowInstanceUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "ServiceNow instance URL (without https://)"
+      }
+    },
+    "serviceNowWebhookUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "ServiceNow webhook URL for incident creation"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "swedencentral",
+      "metadata": {
+        "description": "Location for alert rules and action group"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+        "Environment": "Lab",
+        "Purpose": "SRE-Agent-Demo",
+        "ManagedBy": "Bicep"
+      },
+      "metadata": {
+        "description": "Tags to apply to all resources"
+      }
+    }
+  },
+  "variables": {
+    "backendAppResourceId": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.App/containerApps/{2}', parameters('subscriptionId'), parameters('resourceGroupName'), parameters('backendAppName'))]",
+    "frontendAppResourceId": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.App/containerApps/{2}', parameters('subscriptionId'), parameters('resourceGroupName'), parameters('frontendAppName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "ServiceNow-ActionGroup",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "groupShortName": "SNow-AG",
+        "enabled": true,
+        "webhookReceivers": [
+          {
+            "name": "ServiceNow-Webhook",
+            "serviceUri": "[parameters('serviceNowWebhookUrl')]",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "High Memory Usage - Octopets API",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Triggers when backend container app memory usage exceeds 80% for 5 minutes",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[variables('backendAppResourceId')]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "MemoryUsageHigh",
+              "metricName": "WorkingSetBytes",
+              "metricNamespace": "Microsoft.App/containerApps",
+              "operator": "GreaterThan",
+              "threshold": 858993459,
+              "timeAggregation": "Average",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]",
+            "webHookProperties": {
+              "alertName": "High Memory Usage - Octopets API",
+              "resourceName": "[parameters('backendAppName')]",
+              "resourceGroup": "[parameters('resourceGroupName')]",
+              "severity": "Warning"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "Very High Memory Usage - Octopets API",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Triggers when backend container app memory usage exceeds 90% for 5 minutes",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [
+          "[variables('backendAppResourceId')]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "MemoryUsageVeryHigh",
+              "metricName": "WorkingSetBytes",
+              "metricNamespace": "Microsoft.App/containerApps",
+              "operator": "GreaterThan",
+              "threshold": 966367641,
+              "timeAggregation": "Average",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]",
+            "webHookProperties": {
+              "alertName": "Very High Memory Usage - Octopets API",
+              "resourceName": "[parameters('backendAppName')]",
+              "resourceGroup": "[parameters('resourceGroupName')]",
+              "severity": "Error"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "High Error Rate - Octopets API",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Triggers when backend API has more than 10 failed requests per minute for 5 minutes",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[variables('backendAppResourceId')]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "ErrorRateHigh",
+              "metricName": "Requests",
+              "metricNamespace": "Microsoft.App/containerApps",
+              "operator": "GreaterThan",
+              "threshold": 10,
+              "timeAggregation": "Total",
+              "criterionType": "StaticThresholdCriterion",
+              "dimensions": [
+                {
+                  "name": "statusCodeCategory",
+                  "operator": "Include",
+                  "values": [
+                    "5xx"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]",
+            "webHookProperties": {
+              "alertName": "High Error Rate - Octopets API",
+              "resourceName": "[parameters('backendAppName')]",
+              "resourceGroup": "[parameters('resourceGroupName')]",
+              "severity": "Warning"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "Critical Error Rate - Octopets API",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Triggers when backend API has more than 50 failed requests per minute for 5 minutes",
+        "severity": 0,
+        "enabled": true,
+        "scopes": [
+          "[variables('backendAppResourceId')]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "ErrorRateCritical",
+              "metricName": "Requests",
+              "metricNamespace": "Microsoft.App/containerApps",
+              "operator": "GreaterThan",
+              "threshold": 50,
+              "timeAggregation": "Total",
+              "criterionType": "StaticThresholdCriterion",
+              "dimensions": [
+                {
+                  "name": "statusCodeCategory",
+                  "operator": "Include",
+                  "values": [
+                    "5xx"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]",
+            "webHookProperties": {
+              "alertName": "Critical Error Rate - Octopets API",
+              "resourceName": "[parameters('backendAppName')]",
+              "resourceGroup": "[parameters('resourceGroupName')]",
+              "severity": "Critical"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "actionGroupId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/actionGroups', 'ServiceNow-ActionGroup')]"
+    },
+    "actionGroupName": {
+      "type": "string",
+      "value": "ServiceNow-ActionGroup"
+    },
+    "highMemoryAlertId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/metricAlerts', 'High Memory Usage - Octopets API')]"
+    },
+    "veryHighMemoryAlertId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/metricAlerts', 'Very High Memory Usage - Octopets API')]"
+    },
+    "highErrorRateAlertId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/metricAlerts', 'High Error Rate - Octopets API')]"
+    },
+    "criticalErrorRateAlertId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/metricAlerts', 'Critical Error Rate - Octopets API')]"
+    },
+    "alertRuleNames": {
+      "type": "array",
+      "value": [
+        "High Memory Usage - Octopets API",
+        "Very High Memory Usage - Octopets API",
+        "High Error Rate - Octopets API",
+        "Critical Error Rate - Octopets API"
+      ]
+    }
+  }
+}

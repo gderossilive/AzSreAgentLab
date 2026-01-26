@@ -548,6 +548,83 @@ az monitor diagnostic-settings list \
 - Add static thresholds for known normal ranges
 - Filter out specific resources by tag
 
+## Best Practices for Application Error Handling
+
+To reduce false 5xx alerts and improve error visibility:
+
+### 1. Implement Structured Logging
+- **Use Application Insights SDK** in your application code
+- Emit structured logs with correlation IDs to trace requests end-to-end
+- Log exceptions with context (user ID, operation name, duration)
+
+**Example (ASP.NET Core)**:
+```csharp
+// Add to Program.cs
+builder.Services.AddApplicationInsightsTelemetry();
+
+// In controllers/services
+_logger.LogError(exception, 
+    "Failed to process request {OperationId}", 
+    Activity.Current?.Id);
+```
+
+### 2. Add Global Exception Handling
+- Catch unhandled exceptions and log them properly
+- Return appropriate HTTP status codes
+
+**Example (ASP.NET Core)**:
+```csharp
+app.UseExceptionHandler("/error");
+
+app.Map("/error", (HttpContext context) =>
+{
+    var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+    // Log exception details
+    return Results.Problem(
+        title: "An error occurred",
+        statusCode: 500
+    );
+});
+```
+
+### 3. Use Correct HTTP Status Codes
+- **4xx**: Client errors (validation failures, not found, unauthorized)
+- **5xx**: Server errors (unhandled exceptions, database failures, timeouts)
+
+**Example**:
+```csharp
+// Bad: Returns 500 for validation errors
+if (string.IsNullOrEmpty(name))
+    throw new Exception("Name required");  // → 500
+
+// Good: Returns 400 for validation errors
+if (string.IsNullOrEmpty(name))
+    return Results.BadRequest("Name required");  // → 400
+```
+
+### 4. Add Request Correlation
+- Propagate correlation IDs across service boundaries
+- Include correlation ID in all logs and error responses
+
+**Example (ASP.NET Core)**:
+```csharp
+// Middleware adds correlation ID to response headers
+app.Use(async (context, next) =>
+{
+    var correlationId = Activity.Current?.Id ?? Guid.NewGuid().ToString();
+    context.Response.Headers["X-Correlation-ID"] = correlationId;
+    await next();
+});
+```
+
+### 5. Monitor Error Budgets
+Instead of alerting on every 5xx, consider:
+- Alert when 5xx rate > 2% of total requests
+- Alert when 5xx count exceeds normal baseline by 3σ
+- Use Azure Monitor workbooks to track error budget consumption
+
+**Note**: The Octopets application code is maintained in the [Azure-Samples/octopets](https://github.com/Azure-Samples/octopets) repository. To implement these practices, contribute changes to that repository.
+
 ## Architecture Details
 
 ### Data Flow
