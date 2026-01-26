@@ -2,6 +2,10 @@
 
 A complete lab environment for testing Azure SRE Agent (Preview) with a realistic workload, deployed to Sweden Central region.
 
+## 🚨 Recent Incidents & Fixes
+
+- **2026-01-26**: Octopets API 5xx spike resolved - See [Incident Fix Documentation](docs/octopets-5xx-incident-fix.md) and [Validation Guide](docs/octopets-5xx-validation-guide.md)
+
 ## 🎯 Overview
 
 This lab deploys:
