@@ -4,6 +4,29 @@
 
 This demo showcases an **autonomous Azure SRE Agent** that monitors Azure resource health, detects anomalies using statistical analysis, and sends notifications to Microsoft Teams when issues are found.
 
+### Demo Flow (End-to-End)
+
+In a typical run, you (1) configure the Teams webhook + SRE Agent connector, (2) upload the `healthcheckagent` YAML, then (3) either wait for the scheduled trigger or use **Run Now** to execute the health check. To force a measurable anomaly for the demo, enable an Octopets backend injector (CPU or memory) and generate traffic; Azure Monitor records the resulting metric changes and the SRE Agent analyzes the last 24 hours of signals. If the agent detects statistically significant deviations, it posts a single Adaptive Card to Teams summarizing the impacted resources and recommended next actions.
+
+```
+┌──────────────┐    enable injectors + load     ┌──────────────────┐
+│ You / Scripts├──────────────────────────────▶│ Octopets (Apps)  │
+└──────┬───────┘                                └───────┬──────────┘
+   │                                                │
+   │ metrics/logs (24h window)                       │ emits telemetry
+   ▼                                                ▼
+┌──────────────────────┐     analyze + detect     ┌──────────────────────┐
+│ Azure Monitor / Logs  ├────────────────────────▶│ Azure SRE Agent       │
+└──────────┬───────────┘                          │ (healthcheckagent)   │
+       │                                      └──────────┬───────────┘
+       │ if anomalies found                                 │
+       ▼                                                    ▼
+     (silent if none)                                 ┌──────────────────┐
+                          │ Microsoft Teams   │
+                          │ (Adaptive Card)   │
+                          └──────────────────┘
+```
+
 ### Key Capabilities
 
 - **Autonomous Monitoring**: Scheduled health checks every 24 hours

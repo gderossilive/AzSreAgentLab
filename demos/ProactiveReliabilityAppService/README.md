@@ -123,6 +123,8 @@ This will:
 - generate load to produce telemetry
 - wait for SRE Agent remediation (swap back)
 
+### Demo Flow (End-to-End)
+
 Typical session (end-to-end):
 
 - Preparation (before any alert/incident)

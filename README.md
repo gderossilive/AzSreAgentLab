@@ -20,12 +20,14 @@ This lab deploys:
    - Statistical anomaly detection using MAD/z-score analysis
    - Cost monitoring, Azure Advisor integration, dependency health checks
    - Adaptive Card alerts sent to Microsoft Teams
+   - Demo flow diagram: [demos/AzureHealthCheck/README.md#demo-flow-end-to-end](demos/AzureHealthCheck/README.md#demo-flow-end-to-end)
    - See [Health Check Demo](#-azure-health-check-demo) for details
 
 3. **Proactive Reliability (App Service Slot Swap)** (`demos/ProactiveReliabilityAppService/`)
    - Deploys an App Service with `staging` slot + App Insights + Activity Log Alert for slot swap
    - Publishes GOOD (fast) to production and BAD (slow) to staging, then swaps BAD into production
    - Intended to have Azure SRE Agent detect regression and remediate by swapping back
+   - Demo flow diagram: [demos/ProactiveReliabilityAppService/README.md#demo-flow-end-to-end](demos/ProactiveReliabilityAppService/README.md#demo-flow-end-to-end)
    - See [Proactive Reliability Demo](demos/ProactiveReliabilityAppService/README.md) for details
 
 ### Demo → scripts map
