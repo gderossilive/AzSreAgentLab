@@ -1,0 +1,498 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "10490563367280388135"
+    }
+  },
+  "parameters": {
+    "environmentName": {
+      "type": "string",
+      "metadata": {
+        "description": "Environment name (e.g., octopets-demo-lab)"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "swedencentral",
+      "metadata": {
+        "description": "Azure region for resources"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+        "Environment": "Lab",
+        "ManagedBy": "Bicep",
+        "Purpose": "Octopets-Demo"
+      },
+      "metadata": {
+        "description": "Tags for all resources"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[format('rg-{0}', parameters('environmentName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "octopets-infrastructure",
+      "resourceGroup": "[format('rg-{0}', parameters('environmentName'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "environmentName": {
+            "value": "[parameters('environmentName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "5126418542956942048"
+            }
+          },
+          "parameters": {
+            "environmentName": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for resources"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags for all resources"
+              }
+            }
+          },
+          "variables": {
+            "uniqueSuffix": "[uniqueString(resourceGroup().id)]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('law-{0}', variables('uniqueSuffix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('octopets_appinsights-{0}', variables('uniqueSuffix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('uniqueSuffix')))]",
+                "IngestionMode": "LogAnalytics"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-11-01-preview",
+              "name": "[format('acr{0}', variables('uniqueSuffix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Basic"
+              },
+              "properties": {
+                "adminUserEnabled": false
+              }
+            },
+            {
+              "type": "Microsoft.App/managedEnvironments",
+              "apiVersion": "2024-03-01",
+              "name": "[format('cae-{0}', parameters('environmentName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "appLogsConfiguration": {
+                  "destination": "log-analytics",
+                  "logAnalyticsConfiguration": {
+                    "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('uniqueSuffix'))), '2023-09-01').customerId]",
+                    "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('uniqueSuffix'))), '2023-09-01').primarySharedKey]"
+                  }
+                },
+                "daprAIConnectionString": "[reference(resourceId('Microsoft.Insights/components', format('octopets_appinsights-{0}', variables('uniqueSuffix'))), '2020-02-02').ConnectionString]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('octopets_appinsights-{0}', variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2024-03-01",
+              "name": "octopetsapi",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "environmentId": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "configuration": {
+                  "activeRevisionsMode": "Single",
+                  "ingress": {
+                    "external": true,
+                    "targetPort": 8080,
+                    "transport": "auto",
+                    "allowInsecure": false,
+                    "traffic": [
+                      {
+                        "latestRevision": true,
+                        "weight": 100
+                      }
+                    ]
+                  },
+                  "registries": [
+                    {
+                      "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', format('acr{0}', variables('uniqueSuffix'))), '2023-11-01-preview').loginServer]",
+                      "identity": "system"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "octopetsapi",
+                      "image": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest",
+                      "resources": {
+                        "cpu": "[json('1.0')]",
+                        "memory": "2Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "EnableSwagger",
+                          "value": "true"
+                        },
+                        {
+                          "name": "ASPNETCORE_URLS",
+                          "value": "http://+:8080"
+                        },
+                        {
+                          "name": "CPU_STRESS",
+                          "value": "false"
+                        },
+                        {
+                          "name": "MEMORY_ERRORS",
+                          "value": "false"
+                        },
+                        {
+                          "name": "OTEL_DOTNET_AUTO_HOME",
+                          "value": "/otel-dotnet-auto"
+                        },
+                        {
+                          "name": "OTEL_SERVICE_NAME",
+                          "value": "octopetsapi"
+                        },
+                        {
+                          "name": "OTEL_TRACES_EXPORTER",
+                          "value": "otlp"
+                        },
+                        {
+                          "name": "OTEL_METRICS_EXPORTER",
+                          "value": "otlp"
+                        },
+                        {
+                          "name": "OTEL_LOGS_EXPORTER",
+                          "value": "otlp"
+                        },
+                        {
+                          "name": "OTEL_EXPORTER_OTLP_PROTOCOL",
+                          "value": "grpc"
+                        },
+                        {
+                          "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+                          "value": "http://localhost:4317"
+                        },
+                        {
+                          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                          "value": "[reference(resourceId('Microsoft.Insights/components', format('octopets_appinsights-{0}', variables('uniqueSuffix'))), '2020-02-02').ConnectionString]"
+                        }
+                      ],
+                      "probes": [
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "path": "/health",
+                            "port": 8080,
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 10,
+                          "periodSeconds": 30,
+                          "failureThreshold": 3,
+                          "successThreshold": 1,
+                          "timeoutSeconds": 5
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "path": "/health",
+                            "port": 8080,
+                            "scheme": "HTTP"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 10,
+                          "failureThreshold": 3,
+                          "successThreshold": 1,
+                          "timeoutSeconds": 3
+                        }
+                      ]
+                    },
+                    {
+                      "name": "otelcol",
+                      "image": "otel/opentelemetry-collector-contrib:0.91.0",
+                      "resources": {
+                        "cpu": "[json('0.25')]",
+                        "memory": "0.5Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                          "value": "[reference(resourceId('Microsoft.Insights/components', format('octopets_appinsights-{0}', variables('uniqueSuffix'))), '2020-02-02').ConnectionString]"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 2,
+                    "maxReplicas": 10,
+                    "rules": [
+                      {
+                        "name": "http-scaling",
+                        "http": {
+                          "metadata": {
+                            "concurrentRequests": "10"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('acr{0}', variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.Insights/components', format('octopets_appinsights-{0}', variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2024-03-01",
+              "name": "octopetsfe",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "environmentId": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "configuration": {
+                  "activeRevisionsMode": "Single",
+                  "ingress": {
+                    "external": true,
+                    "targetPort": 80,
+                    "transport": "auto",
+                    "allowInsecure": false,
+                    "traffic": [
+                      {
+                        "latestRevision": true,
+                        "weight": 100
+                      }
+                    ]
+                  },
+                  "registries": [
+                    {
+                      "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', format('acr{0}', variables('uniqueSuffix'))), '2023-11-01-preview').loginServer]",
+                      "identity": "system"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "octopetsfe",
+                      "image": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest",
+                      "resources": {
+                        "cpu": "[json('0.5')]",
+                        "memory": "1Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "services__octopetsapi__https__0",
+                          "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', 'octopetsapi'), '2024-03-01').configuration.ingress.fqdn)]"
+                        },
+                        {
+                          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                          "value": "[reference(resourceId('Microsoft.Insights/components', format('octopets_appinsights-{0}', variables('uniqueSuffix'))), '2020-02-02').ConnectionString]"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": 1,
+                    "maxReplicas": 5,
+                    "rules": [
+                      {
+                        "name": "http-scaling",
+                        "http": {
+                          "metadata": {
+                            "concurrentRequests": "50"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('acr{0}', variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.Insights/components', format('octopets_appinsights-{0}', variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.App/containerApps', 'octopetsapi')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', format('acr{0}', variables('uniqueSuffix')))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', format('acr{0}', variables('uniqueSuffix'))), resourceId('Microsoft.App/containerApps', 'octopetsapi'), 'acrpull')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+                "principalId": "[reference(resourceId('Microsoft.App/containerApps', 'octopetsapi'), '2024-03-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('acr{0}', variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.App/containerApps', 'octopetsapi')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', format('acr{0}', variables('uniqueSuffix')))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', format('acr{0}', variables('uniqueSuffix'))), resourceId('Microsoft.App/containerApps', 'octopetsfe'), 'acrpull')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+                "principalId": "[reference(resourceId('Microsoft.App/containerApps', 'octopetsfe'), '2024-03-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('acr{0}', variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.App/containerApps', 'octopetsfe')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "containerRegistryName": {
+              "type": "string",
+              "value": "[format('acr{0}', variables('uniqueSuffix'))]"
+            },
+            "containerAppEnvironmentName": {
+              "type": "string",
+              "value": "[format('cae-{0}', parameters('environmentName'))]"
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('uniqueSuffix')))]"
+            },
+            "applicationInsightsConnectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('octopets_appinsights-{0}', variables('uniqueSuffix'))), '2020-02-02').ConnectionString]"
+            },
+            "octopetsApiAppName": {
+              "type": "string",
+              "value": "octopetsapi"
+            },
+            "octopetsFrontendAppName": {
+              "type": "string",
+              "value": "octopetsfe"
+            },
+            "octopetsApiUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', 'octopetsapi'), '2024-03-01').configuration.ingress.fqdn)]"
+            },
+            "octopetsFrontendUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', 'octopetsfe'), '2024-03-01').configuration.ingress.fqdn)]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('rg-{0}', parameters('environmentName')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[format('rg-{0}', parameters('environmentName'))]"
+    },
+    "containerRegistryName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'octopets-infrastructure'), '2025-04-01').outputs.containerRegistryName.value]"
+    },
+    "containerAppEnvironmentName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'octopets-infrastructure'), '2025-04-01').outputs.containerAppEnvironmentName.value]"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'octopets-infrastructure'), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+    },
+    "applicationInsightsConnectionString": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'octopets-infrastructure'), '2025-04-01').outputs.applicationInsightsConnectionString.value]"
+    },
+    "octopetsApiAppName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'octopets-infrastructure'), '2025-04-01').outputs.octopetsApiAppName.value]"
+    },
+    "octopetsFrontendAppName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'octopets-infrastructure'), '2025-04-01').outputs.octopetsFrontendAppName.value]"
+    }
+  }
+}

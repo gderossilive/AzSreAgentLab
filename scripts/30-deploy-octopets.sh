@@ -18,13 +18,13 @@ az account show >/dev/null 2>&1 || {
   exit 1
 }
 
-# Deploy infrastructure using the generated Bicep (no Docker needed)
+# Deploy infrastructure using Bicep from lab repo (no Docker needed)
 echo "Deploying Octopets infrastructure via Azure CLI..."
 
 # Deploy Bicep at subscription scope (it creates the resource group)
 az deployment sub create \
   -l "$AZURE_LOCATION" \
-  -f external/octopets/apphost/infra/main.bicep \
+  -f infra/octopets/main.bicep \
   -p environmentName="$OCTOPETS_ENV_NAME" \
   -p location="$AZURE_LOCATION"
 
