@@ -28,6 +28,41 @@ spec:
     Workflow:
      1) Intake: if given an INC number, use GetServiceNowIncident to obtain sys_id; then fetch full
        details via GetServiceNowIncidentById.
+       If GetServiceNowIncident is unavailable, use ExecutePythonCode to retrieve sys_id via the
+       ServiceNow Table API. Example (no secrets hardcoded; use env vars):
+
+       ```python
+       import os
+       import requests
+
+       number = "INC0010041"
+       instance = os.environ["SERVICENOW_INSTANCE"]  # e.g. "dev331204"
+       user = os.environ["SERVICENOW_USERNAME"]
+       password = os.environ["SERVICENOW_PASSWORD"]
+
+       base = f"https://{instance}.service-now.com/api/now/table/incident"
+
+       # Prefer sysparm_query (official pattern). If you must use '?number=INC...', keep it as fallback.
+       r = requests.get(
+         base,
+         params={
+           "sysparm_query": f"number={number}",
+           "sysparm_fields": "sys_id,number,state,short_description",
+           "sysparm_limit": 1,
+         },
+         auth=(user, password),
+         headers={"Accept": "application/json"},
+         timeout=30,
+       )
+       r.raise_for_status()
+       data = r.json()
+       result = data.get("result") or []
+       if not result:
+         raise RuntimeError(f"Incident not found: {number}")
+
+       sys_id = result[0]["sys_id"]
+       print(sys_id)
+       ```
     2) Diagnostics: query App Insights/Log Analytics + relevant Azure metrics; include exact KQL,
        UTC windows, counts, correlation IDs, and a short evidence-backed summary.
     3) Source/IaC: inspect available repo/IaC inputs; propose a minimal fix and note IaC/config

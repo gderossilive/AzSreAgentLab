@@ -231,3 +231,17 @@ Generates a pie chart visualization to show the proportional distribution of val
 
 ## PlotScatter
 Generates a scatter plot from X-Y coordinate pairs and returns it. You provide: chartTitle (displayed at top), xAxisLabel (label for X-axis), yAxisLabel (label for Y-axis), dataPoints (semicolon-separated items in format 'x|y|label', e.g., '1.2|3.4|Point A;2.3|4.5|Point B;3.4|5.6|Point C'), and description (a short summary). Scatter plots are essential for identifying correlations (positive, negative, or none), detecting clusters of similar behavior, finding outliers that deviate from patterns, and understanding the spread of your data. Use this for statistical analysis, hypothesis testing, and exploring relationships between metrics during root cause analysis.
+
+# General
+
+## AcknowledgeServiceNowIncident
+Acknowledges a ServiceNow incident
+
+## GetServiceNowIncident
+Get ServiceNow incident details
+
+## PostServiceNowDiscussionEntry
+Post ServiceNow discussion entry
+
+## ResolveServiceNowIncident
+Resolve a ServiceNow incident
