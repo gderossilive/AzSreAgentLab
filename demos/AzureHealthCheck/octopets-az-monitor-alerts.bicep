@@ -97,7 +97,7 @@ resource apiHighLatency 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   location: 'global'
   tags: tags
   properties: {
-    description: 'Triggers when Octopets API average response time exceeds threshold for the window.'
+    description: 'Triggers when Octopets API average response time exceeds threshold for 2xx responses only.'
     severity: 2
     enabled: true
     scopes: [
@@ -116,6 +116,15 @@ resource apiHighLatency 'Microsoft.Insights/metricAlerts@2018-03-01' = {
           threshold: backendResponseTimeMsThreshold
           timeAggregation: 'Average'
           criterionType: 'StaticThresholdCriterion'
+          dimensions: [
+            {
+              name: 'statusCodeCategory'
+              operator: 'Include'
+              values: [
+                '2xx'
+              ]
+            }
+          ]
         }
       ]
     }
@@ -205,7 +214,7 @@ resource feHighLatency 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   location: 'global'
   tags: tags
   properties: {
-    description: 'Triggers when Octopets FE average response time exceeds threshold for the window.'
+    description: 'Triggers when Octopets FE average response time exceeds threshold for 2xx responses only.'
     severity: 2
     enabled: true
     scopes: [
@@ -224,6 +233,15 @@ resource feHighLatency 'Microsoft.Insights/metricAlerts@2018-03-01' = {
           threshold: frontendResponseTimeMsThreshold
           timeAggregation: 'Average'
           criterionType: 'StaticThresholdCriterion'
+          dimensions: [
+            {
+              name: 'statusCodeCategory'
+              operator: 'Include'
+              values: [
+                '2xx'
+              ]
+            }
+          ]
         }
       ]
     }
