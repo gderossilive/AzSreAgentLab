@@ -67,6 +67,7 @@ fe_app="octopetsfe"
 
 echo "Updating backend container app: $api_app"
 az containerapp update -g "$OCTOPETS_RG_NAME" -n "$api_app" \
+  --container-name "$api_app" \
   --image "$api_tag" \
   --query "properties.configuration.ingress.fqdn" -o tsv >/dev/null || \
 az containerapp create -g "$OCTOPETS_RG_NAME" -n "$api_app" \
@@ -79,11 +80,44 @@ az containerapp create -g "$OCTOPETS_RG_NAME" -n "$api_app" \
   --env-vars "EnableSwagger=true" "ASPNETCORE_URLS=http://+:8080" \
   --query "properties.configuration.ingress.fqdn" -o tsv >/dev/null
 
+# Configure Application Insights + OpenTelemetry
+# Note: The backend uses the Aspire ServiceDefaults Azure Monitor exporter.
+# It activates when APPLICATIONINSIGHTS_CONNECTION_STRING is present.
+app_insights_name="$(az resource list -g "$OCTOPETS_RG_NAME" --resource-type microsoft.insights/components --query "[?tags.\"aspire-resource-name\"=='octopets-appinsights'][0].name" -o tsv)"
+if [[ -z "$app_insights_name" ]]; then
+  # Fallback: some deployments don't carry Aspire tags.
+  app_insights_name="$(az resource list -g "$OCTOPETS_RG_NAME" --resource-type microsoft.insights/components --query "[0].name" -o tsv)"
+fi
+app_insights_cs=""
+if [[ -n "$app_insights_name" ]]; then
+  app_insights_cs="$(az resource show -g "$OCTOPETS_RG_NAME" -n "$app_insights_name" --resource-type microsoft.insights/components --query properties.ConnectionString -o tsv 2>/dev/null || true)"
+fi
+
+if [[ -z "$app_insights_cs" ]]; then
+  echo "WARN: App Insights connection string not found in $OCTOPETS_RG_NAME." >&2
+  echo "      Telemetry will not be exported to Application Insights until it's configured." >&2
+else
+  echo "Configuring Application Insights on $api_app"${app_insights_name:+" ("$app_insights_name")"}
+
+  # Store the connection string as a Container Apps secret (do not print it)
+  az containerapp secret set -g "$OCTOPETS_RG_NAME" -n "$api_app" \
+    --secrets "appinsights-connection-string=$app_insights_cs" >/dev/null
+
+  # Ensure traces are sampled 100% so errors/traces aren't dropped by the SDK
+  az containerapp update -g "$OCTOPETS_RG_NAME" -n "$api_app" \
+    --container-name "$api_app" \
+    --set-env-vars \
+      "APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsights-connection-string" \
+      "OTEL_TRACES_SAMPLER=always_on" \
+    >/dev/null
+fi
+
 api_fqdn="$(az containerapp show -g "$OCTOPETS_RG_NAME" -n "$api_app" --query "properties.configuration.ingress.fqdn" -o tsv)"
 api_url="https://${api_fqdn}"
 
 echo "Updating frontend container app: $fe_app"
 az containerapp update -g "$OCTOPETS_RG_NAME" -n "$fe_app" \
+  --container-name "$fe_app" \
   --image "$fe_tag" \
   --set-env-vars "services__octopetsapi__https__0=${api_url}" \
   --query "properties.configuration.ingress.fqdn" -o tsv >/dev/null || \
