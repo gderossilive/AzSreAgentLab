@@ -11,11 +11,16 @@
 - **Issue**: INC0010064 - Sev3 OutOfMemoryException causing 500 errors
 - **Files modified**:
   - `backend/Endpoints/ListingEndpoints.cs`
+  - `apphost/Program.cs`
+  - `apphost/infra/main.bicep` (created)
+  - `apphost/infra/resources/*.bicep` (created)
 - **Changes**:
   - Removed `AReallyExpensiveOperation()` method that allocated ~1GB memory for demo/testing
   - Removed ERRORS configuration flag check from GET /{id:int} endpoint
+  - Removed ERRORS environment variable from AppHost Program.cs (was set to "true" in publish mode)
+  - Created Bicep infrastructure templates for Container Apps deployment
   - Simplified endpoint to directly fetch and return listing data
-- **Reason**: The memory-intensive operation was causing OutOfMemoryException under concurrent load (66 failures observed). This was a demo/test feature and not needed for production operation.
+- **Reason**: The memory-intensive operation was causing OutOfMemoryException under concurrent load (66 failures observed). This was a demo/test feature and not needed for production operation. The ERRORS flag was being set to "true" in production deployments, which triggered the memory issue.
 
 ## Why Vendored
 This lab uses a snapshot of Octopets for:
