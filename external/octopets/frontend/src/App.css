@@ -1,0 +1,224 @@
+/* Global Styles for Octopets Application - Based on Figma */
+
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--gradient-background);
+  color: var(--neutral-900);
+  position: relative;
+  overflow-x: hidden;
+  font-family: var(--font-family-base);
+}
+
+.main-content {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+}
+
+/* Animation keyframes */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Utility classes */
+.fade-in {
+  animation: fadeIn var(--transition-normal, 0.3s) ease;
+}
+
+.slide-up {
+  animation: slideUp var(--transition-normal, 0.3s) ease;
+}
+
+/* Cards */
+.card {
+  background: var(--gradient-card-radial);
+  border-radius: 20px;
+  border: 1px solid var(--neutral-900);
+  overflow: hidden;
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+}
+
+.card-header {
+  padding: 32px;
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.card-body {
+  padding: 32px;
+}
+
+.card-footer {
+  padding: 32px;
+  border-top: 1px solid var(--neutral-200);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family-heading);
+  font-weight: 400;
+  color: var(--neutral-900);
+}
+
+h1 {
+  font-size: 80px;
+  line-height: 1.125;
+}
+
+h2 {
+  font-size: 32px;
+  line-height: 1.3;
+}
+
+h3 {
+  font-size: 24px;
+  line-height: 1.3;
+}
+
+p {
+  font-family: var(--font-family-base);
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 400;
+  color: var(--neutral-900);
+}
+
+/* Cards */
+.card {
+  background-color: var(--neutral-100);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.card-header {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.card-body {
+  padding: var(--space-4);
+}
+
+.card-footer {
+  padding: var(--space-4);
+  border-top: 1px solid var(--neutral-200);
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: var(--space-4);
+}
+
+.form-group label {
+  display: block;
+  font-weight: var(--font-weight-medium);
+  margin-bottom: var(--space-2);
+  color: var(--neutral-700);
+}
+
+.form-control {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  color: var(--neutral-800);
+  background-color: var(--neutral-100);
+  border: 1px solid var(--neutral-300);
+  border-radius: var(--border-radius-md);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--primary-400);
+  box-shadow: 0 0 0 3px rgba(51, 133, 255, 0.2); /* Consider using variable for color */
+}
+
+.form-control.error {
+  border-color: var(--error-500);
+}
+
+.error-message {
+  color: var(--error-500);
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-1);
+}
+
+/* Loading indicator */
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  color: var(--primary-600);
+  font-size: var(--font-size-xl);
+}
+
+/* Success message */
+.success-message {
+  background-color: var(--success-100);
+  color: var(--success-900);
+  padding: var(--space-4);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+  max-width: 600px;
+  margin: var(--space-8) auto;
+  animation: fadeIn var(--transition-normal) ease;
+}
+
+/* Not found message */
+.not-found {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+}
+
+/* Button styles have been moved to Button.css and should be imported in components that need them */
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .main-content {
+    padding-top: 60px; /* Adjust if header height changes */
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  h1 {
+    font-size: var(--font-size-xl); /* Use variables */
+  }
+  h2 {
+    font-size: var(--font-size-lg); /* Use variables */
+  }
+
+  /* Button responsive styles are now in Button.css */
+}

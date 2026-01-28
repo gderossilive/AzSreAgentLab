@@ -1,0 +1,317 @@
+/* Button styles based on Figma design - Consolidated from all CSS files */
+.btn {
+  display: inline-block;
+  font-family: var(--font-family-button);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
+  text-align: center;
+  padding: 8px 20px;
+  border-radius: 999px; /* Makes buttons have a half-circle on each side (pill shape) */
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent; /* Add default border for consistency */
+  box-shadow: var(--shadow-sm);
+}
+
+.btn:hover {
+  /* No transform or movement on hover */
+  box-shadow: var(--shadow-md);
+}
+
+/* Buttons inside cards - white background, black text, black border, reverse on hover */
+.review-card .btn,
+.form-actions .btn,
+.listing-card .btn,
+.venue-card .btn,
+.coming-soon-content .btn,
+.listing-buttons .btn {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border: 2px solid var(--neutral-900);
+}
+
+.review-card .btn:hover,
+.form-actions .btn:hover,
+.listing-card .btn:hover,
+.venue-card .btn:hover,
+.coming-soon-content .btn:hover,
+.listing-buttons .btn:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Disabled state */
+.btn:disabled {
+  background-color: var(--neutral-300);
+  color: var(--neutral-500);
+  cursor: not-allowed;
+  border-color: var(--neutral-300);
+}
+
+/* Primary button - white background with black text */
+.btn-primary {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border-color: var(--neutral-900);
+}
+
+.btn-primary:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Make sure card-specific buttons use card button styles, even if they have .btn-primary class */
+.review-card .btn-primary,
+.form-actions .btn-primary,
+.listing-card .btn-primary,
+.coming-soon-content .btn-primary,
+.listing-buttons .btn-primary {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border: 2px solid var(--neutral-900);
+}
+
+.review-card .btn-primary:hover,
+.form-actions .btn-primary:hover,
+.listing-card .btn-primary:hover,
+.coming-soon-content .btn-primary:hover,
+.listing-buttons .btn-primary:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Secondary button - black background with white text */
+.btn-secondary {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100); 
+}
+
+.btn-secondary:hover {
+  background: var(--neutral-100);
+  color: var(--neutral-900);
+  border-color: var(--neutral-900);
+}
+
+/* Apply card button styles to secondary buttons in cards */
+.review-card .btn-secondary,
+.form-actions .btn-secondary,
+.listing-card .btn-secondary,
+.coming-soon-content .btn-secondary,
+.listing-buttons .btn-secondary {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border: 2px solid var(--neutral-900);
+}
+
+.review-card .btn-secondary:hover,
+.form-actions .btn-secondary:hover,
+.listing-card .btn-secondary:hover,
+.coming-soon-content .btn-secondary:hover,
+.listing-buttons .btn-secondary:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Outline button - black background with white text and white border */
+.btn-outline {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border: 2px solid var(--neutral-100);
+}
+
+.btn-outline:hover {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border-color: var(--neutral-900);
+}
+
+/* Make sure card-specific buttons use card button styles, even if they have other classes */
+.review-card .btn-outline,
+.form-actions .btn-outline,
+.listing-card .btn-outline,
+.coming-soon-content .btn-outline,
+.listing-buttons .btn-outline {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border: 2px solid var(--neutral-900);
+}
+
+.review-card .btn-outline:hover,
+.form-actions .btn-outline:hover,
+.listing-card .btn-outline:hover,
+.coming-soon-content .btn-outline:hover,
+.listing-buttons .btn-outline:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Black button - black background with white outline */
+.btn-black {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border: 2px solid var(--neutral-100);
+}
+
+.btn-black:hover {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border-color: var(--neutral-900);
+}
+
+/* Apply card button styles to black buttons in cards */
+.review-card .btn-black,
+.form-actions .btn-black,
+.listing-card .btn-black,
+.coming-soon-content .btn-black,
+.listing-buttons .btn-black {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border: 2px solid var(--neutral-900);
+}
+
+.review-card .btn-black:hover,
+.form-actions .btn-black:hover,
+.listing-card .btn-black:hover,
+.coming-soon-content .btn-black:hover,
+.listing-buttons .btn-black:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Danger button - red background with white text */
+.btn-danger {
+  background-color: var(--error-500);
+  color: var(--neutral-100);
+  border: 2px solid var(--error-500);
+}
+
+.btn-danger:hover {
+  background-color: var(--neutral-100);
+  color: var(--error-500);
+  border-color: var(--error-500);
+}
+
+/* Apply card button styles to danger buttons in cards */
+.review-card .btn-danger,
+.form-actions .btn-danger,
+.listing-card .btn-danger,
+.coming-soon-content .btn-danger,
+.listing-buttons .btn-danger {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border: 2px solid var(--neutral-900);
+}
+
+.review-card .btn-danger:hover,
+.form-actions .btn-danger:hover,
+.listing-card .btn-danger:hover,
+.coming-soon-content .btn-danger:hover,
+.listing-buttons .btn-danger:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Accent button - yellow gradient with black text */
+.btn-accent {
+  background: var(--gradient-yellow);
+  color: var(--neutral-900);
+  box-shadow: var(--shadow-accent);
+  font-weight: var(--font-weight-medium);
+  border: 2px solid transparent;
+}
+
+.btn-accent:hover {
+  background: var(--neutral-900);
+  color: var(--warning-300);
+  border-color: var(--warning-300);
+}
+
+/* Apply card button styles to accent buttons in cards */
+.review-card .btn-accent,
+.form-actions .btn-accent,
+.listing-card .btn-accent,
+.coming-soon-content .btn-accent,
+.listing-buttons .btn-accent {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border: 2px solid var(--neutral-900);
+}
+
+.review-card .btn-accent:hover,
+.form-actions .btn-accent:hover,
+.listing-card .btn-accent:hover,
+.coming-soon-content .btn-accent:hover,
+.listing-buttons .btn-accent:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Button sizes */
+.btn-sm, .btn-small {
+  font-size: 14px;
+  padding: 4px 8px;
+}
+
+.btn-md {
+  padding: var(--button-padding-md, 8px 16px);
+  font-size: var(--font-size-md, 16px);
+}
+
+.btn-lg {
+  padding: var(--button-padding-lg, 12px 24px);
+  font-size: var(--font-size-lg, 18px);
+}
+
+/* Small outline button */
+.btn-small.btn-outline {
+  font-size: 14px;
+  padding: 4px 12px;
+}
+
+/* Make sure small outline buttons inside cards follow the card button styles */
+.review-card .btn-small.btn-outline,
+.form-actions .btn-small.btn-outline,
+.listing-card .btn-small.btn-outline,
+.coming-soon-content .btn-small.btn-outline,
+.listing-buttons .btn-small.btn-outline {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border: 2px solid var(--neutral-900);
+}
+
+.review-card .btn-small.btn-outline:hover,
+.form-actions .btn-small.btn-outline:hover,
+.listing-card .btn-small.btn-outline:hover,
+.coming-soon-content .btn-small.btn-outline:hover,
+.listing-buttons .btn-small.btn-outline:hover {
+  background-color: var(--neutral-900);
+  color: var(--neutral-100);
+  border-color: var(--neutral-100);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .btn {
+    padding: var(--space-2, 8px) var(--space-3, 12px);
+    font-size: var(--font-size-sm, 14px);
+  }
+}
+
+@media (max-width: 480px) {
+  .btn {
+    width: 100%;
+    display: block;
+    margin-bottom: 10px;
+  }
+}

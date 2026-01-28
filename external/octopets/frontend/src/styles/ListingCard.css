@@ -1,0 +1,206 @@
+/* Group address and pets under the name */
+.listing-details-under-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  margin-top: var(--space-2);
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+/* Address under name, styled for left alignment and spacing */
+.listing-address {
+  color: var(--neutral-600);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding: 0;
+  line-height: 1.4;
+  text-align: left;
+}
+
+/* Allowed pets horizontal row styling */
+.allowed-pets-horizontal {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 0;
+}
+
+.listing-card {
+  background-color: var(--neutral-100);
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--neutral-900);
+  text-decoration: none;
+  height: fit-content;
+  padding: 12px;
+  gap: 8px;
+}
+
+/* No hover effect as requested - no motion */
+
+.listing-image {
+  height: 200px;
+  overflow: hidden;
+  position: relative;
+  border-radius: 12px;
+}
+
+.listing-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-2);
+}
+
+/* Create a consistent look with venue-card */
+.image-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(45deg, var(--neutral-100), var(--neutral-200));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  color: var(--neutral-600);
+  border-radius: 12px;
+}
+
+.listing-content {
+  padding: var(--space-4);
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+}
+
+.listing-details-under-name h3 {
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-lg);
+  color: var(--neutral-900);
+}
+
+.listing-buttons {
+  margin-top: var(--space-2);
+  display: flex;
+  gap: var(--space-2);
+}
+
+.overlay-type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--neutral-900);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  background: white;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--border-radius-full);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.overlay-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: white;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--border-radius-full);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.overlay-rating .stars {
+  color: var(--neutral-900);
+  font-size: var(--font-size-md);
+}
+
+.overlay-rating .rating-value {
+  color: var(--neutral-900);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+}
+
+.listing-location {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  color: var(--neutral-600);
+  font-size: var(--font-size-sm);
+  width: 100%;
+  padding: var(--space-1) 0;
+  margin-bottom: var(--space-3);
+}
+
+.location-icon {
+  color: var(--primary-500);
+}
+
+/* We've moved these styles to the overlay elements */
+
+.review-count {
+  color: var(--neutral-600);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  width: 100%;
+  padding: var(--space-1) 0;
+  margin-bottom: var(--space-3);
+}
+
+.allowed-pets {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  border-top: 1px solid var(--neutral-200);
+  padding-top: var(--space-2);
+}
+
+.pets-label {
+  font-size: var(--font-size-sm);
+  color: var(--neutral-600);
+  font-weight: var(--font-weight-medium);
+}
+
+.pets-icons {
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pet-icon {
+  background: var(--neutral-100);
+  color: var(--neutral-900);
+  padding: var(--space-1);
+  border-radius: var(--border-radius-full);
+  font-size: var(--font-size-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  transition: none; /* Explicitly disable transitions */
+}
+
+/* Explicitly disable hover effects */
+.pet-icon:hover {
+  transform: none;
+  background: var(--neutral-100);
+  color: var(--neutral-900);
+}

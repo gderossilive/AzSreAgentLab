@@ -1,0 +1,1347 @@
+/* Home Page Styles - Based on Figma Design */
+.home-page {
+  width: 100%;
+  overflow-x: hidden;
+  background: var(--gradient-background);
+}
+
+/* Hero Section */
+.hero {
+  background: var(--primary-300); /* Pink background */
+  height: 520px;
+  margin-top: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--neutral-900);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-content {
+  text-align: center;
+  max-width: 800px;
+  padding: 0 var(--space-4);
+  z-index: 3;
+  animation: fadeIn 1s ease-out;
+  position: relative;
+}
+
+.hero h1 {
+  font-family: var(--font-family-heading);
+  font-size: 80px;
+  line-height: 1.125em;
+  margin-bottom: 24px;
+  color: var(--neutral-900);
+  font-weight: 700; /* Changed from 400 to 700 for bold text */
+}
+
+.hero p {
+  font-family: var(--font-family-base);
+  font-size: 16px;
+  font-weight: 400;
+  margin-bottom: 40px;
+}
+
+.hero-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.hero-decoration {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
+.hero-circle {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.hero-circle-yellow {
+  width: 600px;
+  height: 600px;
+  background: var(--secondary-500);
+  bottom: -220px; /* Position part of the circle below the bottom edge */
+  left: 50%; /* Center horizontally */
+  transform: translateX(-50%); /* Ensure true centering */
+  filter: blur(150px);
+}
+
+/* Content Section */
+.content {
+  padding: 60px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
+}
+
+/* Section Headers */
+.section-header {
+  text-align: center;
+  margin-bottom: 30px;
+  width: 1160px; /* Match the exact width of 5 pet cards */
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0;
+}
+
+.section-header h2 {
+  font-family: var(--font-family-heading);
+  font-size: 32px;
+  font-weight: 400;
+  margin-bottom: 12px;
+  color: var(--neutral-900);
+  line-height: 1.3em;
+}
+
+.section-header p {
+  font-family: var(--font-family-base);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--neutral-900);
+  line-height: 1.2em;
+}
+
+/* Pet Types Section */
+.pet-types-grid {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  flex-wrap: nowrap; /* Prevent wrapping on larger screens */
+  width: 1160px; /* Exact width for 5 cards (200px*5) + gaps (40px*4) */
+  margin: 0 auto;
+  padding: 0;
+}
+
+.pet-type-card {
+  width: 200px;
+  height: 200px;
+  background: var(--neutral-300);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-decoration: none;
+  position: relative;  background: var(--gradient-card-radial);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.pet-type-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  /* Keep the same background as non-hover state to prevent white overlay */
+  background: var(--gradient-card-radial);
+}
+
+.pet-circle {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 35px;
+  transition: transform 0.3s ease;
+  background: transparent !important;
+}
+
+.pet-type-card:hover .pet-circle {
+  transform: scale(1.1);
+}
+
+.pet-types-grid .pet-icon {
+  font-size: 85px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  filter: drop-shadow(0 0 10px rgba(245, 197, 219, 0.7)) 
+         drop-shadow(0 4px 6px rgba(0, 0, 0, 0.2));
+  transition: filter 0.3s ease, transform 0.3s ease;
+  background: transparent !important;
+}
+
+.pet-type-card:hover .pet-icon {
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 15px rgba(245, 197, 219, 0.9)) 
+         drop-shadow(0 6px 8px rgba(0, 0, 0, 0.3));
+  background: transparent !important;
+}
+
+.pet-type-card h3 {
+  position: absolute;
+  bottom: 24px;
+  margin: 0;
+  font-family: var(--font-family-heading);
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--neutral-900);
+  text-align: center;
+}
+
+/* Features Section */
+.why-section {
+  margin: 150px 0 150px; /* Increased margins for more whitespace */
+  padding: var(--space-12) 0 var(--space-16); /* Increased padding */
+  position: relative; /* For positioning of polaroids */
+  overflow: visible; /* Allow polaroids to overflow section boundaries */
+  min-height: 800px; /* Set minimum height for the section */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.why-section .features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-6);
+  width: 1160px; /* Match the exact width of pet-types-grid and venue-types-grid */
+  margin: 0 auto;
+  margin-top: 60px; /* Increased top margin for better separation */
+  margin-bottom: 40px; /* Add bottom margin */
+  padding: 0;
+  position: relative;
+  z-index: 20; /* Ensure features are above polaroids with higher z-index */
+}
+
+/* Floating Polaroid Photos */
+.floating-polaroids-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2; /* Ensure polaroids appear behind content but above background */
+  pointer-events: none; /* Allow clicking through the container */
+  padding: 0; /* Remove padding to allow positioning at edges */
+  perspective: 1500px; /* Enhanced perspective for better 3D effect */
+  transform-style: preserve-3d; /* Preserve 3D effects for children */
+  overflow: visible; /* Allow polaroids to extend outside the container */
+}
+
+.polaroid {
+  position: absolute;
+  width: 240px; /* Already increased to 240px */
+  background-color: #FFFCF7; /* Slightly off-white for more natural paper look */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 16px 16px 45px 16px; /* Increased padding for larger polaroid */
+  border-radius: 3px;
+  z-index: 1;
+  transform-origin: center center;
+  transition: box-shadow 0.4s ease,
+              filter 0.3s ease; /* Added filter transition but removed transform transition */
+  pointer-events: auto; /* Make polaroids clickable */
+  cursor: pointer; /* Show pointer cursor on hover */
+  will-change: transform; /* Performance optimization */
+  backface-visibility: hidden; /* Reduces flickering */
+  transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg)); /* Force hardware acceleration */
+  -webkit-font-smoothing: subpixel-antialiased; /* Improve text rendering */
+  
+  /* Enhanced texture for more realistic paper look */
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.03) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 2px, transparent 2px),
+    linear-gradient(rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.10));
+  background-size: 50px 50px, 50px 50px, 100% 100%;
+  
+  /* Add subtle edge texture */
+  border: 1px solid rgba(240, 240, 240, 0.9);
+  outline: 1px solid rgba(200, 200, 200, 0.2);
+}
+
+/* Apply different animation patterns to prevent polaroids from moving in unison */
+.polaroid-1 {
+  animation: float-1 24s ease-in-out infinite;
+}
+
+.polaroid-2 {
+  animation: float-2 28s ease-in-out infinite;
+}
+
+.polaroid-3 {
+  animation: float-3 32s ease-in-out infinite;
+}
+
+.polaroid-4 {
+  animation: float-4 26s ease-in-out infinite;
+}
+
+.polaroid-5 {
+  animation: float-5 30s ease-in-out infinite;
+}
+
+/* Add a subtle 3D effect with a pseudo-element */
+.polaroid::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 50%, rgba(0,0,0,0.08) 100%);
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 2px;
+}
+
+/* Add a subtle shadow effect to create a more realistic polaroid */
+.polaroid::before {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  right: 6px;
+  left: 6px;
+  height: 8px;
+  z-index: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  filter: blur(6px);
+}
+
+.polaroid:hover {
+  /* Static hover effect without any motion - just a subtle highlight with glow and shadow */
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  /* No z-index change to prevent polaroid from coming to the front */
+  filter: brightness(1.05) contrast(1.05);
+  /* No transform changes on hover to prevent motion */
+  transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg)) !important;
+}
+
+.polaroid:active {
+  /* Slightly stronger effect when clicked, but no motion */
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.25);
+  /* No z-index change to prevent polaroid from coming to the front */
+  filter: brightness(1.08) contrast(1.08);
+  /* No transform changes on active to prevent motion */
+  transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg)) !important;
+}
+
+.polaroid img {
+  width: 100%;
+  height: 210px; /* Increased from 190px to 210px for taller images */
+  object-fit: cover;
+  border-radius: 2px;
+  display: block;
+  filter: brightness(1.05) contrast(1.05) saturate(1.05); /* Slightly enhance the image */
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
+  position: relative; /* For z-index */
+  z-index: 2; /* Above the pseudo-element */
+  border: 1px solid rgba(255, 255, 255, 0.7); /* Subtle white border for a matte effect */
+}
+
+.polaroid:hover img {
+  /* No transform on hover, just slightly enhanced colors */
+  filter: brightness(1.08) contrast(1.08) saturate(1.08);
+}
+
+.polaroid p {
+  text-align: center;
+  margin-top: 16px; /* Increased from 14px to 16px */
+  font-family: 'Indie Flower', cursive, var(--font-family-base);
+  font-size: 21px; /* Increased from 19px to 21px */
+  color: var(--neutral-900);
+  line-height: 1.2;
+  max-width: 90%; /* Prevent text from reaching edges */
+  margin-left: auto;
+  margin-right: auto;
+  position: relative; /* For z-index */
+  z-index: 2; /* Above the pseudo-element */
+}
+
+/* Define more subtle animation paths for very slow movement */
+/* Animation 1: Vertical movement with minimal horizontal shift */
+@keyframes float-1 {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+  25% {
+    transform: translate3d(2px, -8px, 0) rotate(calc(var(--rotate, 0deg) - 0.5deg));
+  }
+  50% {
+    transform: translate3d(3px, 0px, 0) rotate(var(--rotate, 0deg));
+  }
+  75% {
+    transform: translate3d(0px, 8px, 0) rotate(calc(var(--rotate, 0deg) + 0.5deg));
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+}
+
+/* Animation 2: Diagonal movement with emphasis on vertical */
+@keyframes float-2 {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+  25% {
+    transform: translate3d(-3px, -10px, 0) rotate(calc(var(--rotate, 0deg) + 0.7deg));
+  }
+  50% {
+    transform: translate3d(0px, 2px, 0) rotate(var(--rotate, 0deg));
+  }
+  75% {
+    transform: translate3d(-2px, 7px, 0) rotate(calc(var(--rotate, 0deg) - 0.4deg));
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+}
+
+/* Animation 3: Horizontal and vertical movement combined */
+@keyframes float-3 {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+  25% {
+    transform: translate3d(5px, -6px, 0) rotate(calc(var(--rotate, 0deg) - 0.3deg));
+  }
+  50% {
+    transform: translate3d(-4px, 9px, 0) rotate(var(--rotate, 0deg));
+  }
+  75% {
+    transform: translate3d(3px, -7px, 0) rotate(calc(var(--rotate, 0deg) + 0.6deg));
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+}
+
+/* Animation 4: Up-down wave pattern */
+@keyframes float-4 {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+  20% {
+    transform: translate3d(-2px, -9px, 0) rotate(calc(var(--rotate, 0deg) - 0.2deg));
+  }
+  40% {
+    transform: translate3d(1px, 2px, 0) rotate(calc(var(--rotate, 0deg) + 0.1deg));
+  }
+  60% {
+    transform: translate3d(0px, -5px, 0) rotate(var(--rotate, 0deg));
+  }
+  80% {
+    transform: translate3d(3px, 7px, 0) rotate(calc(var(--rotate, 0deg) + 0.3deg));
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+}
+
+/* Animation 5: Vertical bobbing motion */
+@keyframes float-5 {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+  20% {
+    transform: translate3d(1px, 8px, 0) rotate(calc(var(--rotate, 0deg) + 0.4deg));
+  }
+  40% {
+    transform: translate3d(-2px, -6px, 0) rotate(calc(var(--rotate, 0deg) - 0.2deg));
+  }
+  60% {
+    transform: translate3d(2px, -10px, 0) rotate(calc(var(--rotate, 0deg) - 0.6deg));
+  }
+  80% {
+    transform: translate3d(-1px, 4px, 0) rotate(calc(var(--rotate, 0deg) + 0.2deg));
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--rotate, 0deg));
+  }
+}
+
+/* Fix positioning on mobile screens to prevent overlap */
+@media (max-width: 768px) {
+  /* Adjust circular positioning for smaller screens */  
+  /* Top polaroids */
+  .floating-polaroids-container .polaroid:nth-child(1) {
+    top: -5% !important;
+    left: 50% !important;
+    transform: translateX(-50%) rotate(var(--rotate, 0deg)) !important;
+    z-index: 5 !important;
+  }
+  
+  /* Right side polaroids */
+  .floating-polaroids-container .polaroid:nth-child(3) {
+    top: 25% !important;
+    right: 5% !important;
+    z-index: 4 !important;
+  }
+  
+  /* Bottom-right polaroids */
+  .floating-polaroids-container .polaroid:nth-child(5) {
+    bottom: 10% !important;
+    right: 15% !important;
+    z-index: 3 !important;
+  }
+  
+  /* Bottom polaroids */
+  .floating-polaroids-container .polaroid:nth-child(6) {
+    bottom: -5% !important;
+    left: 50% !important;
+    transform: translateX(-50%) rotate(var(--rotate, 0deg)) !important;
+    z-index: 6 !important;
+  }
+  
+  /* Bottom-left polaroids */
+  .floating-polaroids-container .polaroid:nth-child(7) {
+    bottom: 10% !important;
+    left: 15% !important;
+    z-index: 7 !important;
+  }
+  
+  /* Left side polaroids */
+  .floating-polaroids-container .polaroid:nth-child(9) {
+    top: 25% !important;
+    left: 5% !important;
+    z-index: 8 !important;
+  }
+  
+  /* Hide inner circle polaroids on medium screens */
+  .floating-polaroids-container .polaroid:nth-child(11),
+  .floating-polaroids-container .polaroid:nth-child(12),
+  .floating-polaroids-container .polaroid:nth-child(13),
+  .floating-polaroids-container .polaroid:nth-child(14) {
+    display: none !important;
+  }
+}
+
+/* For very small screens, adjust positioning even further */
+@media (max-width: 480px) {
+  /* Only show 5 key polaroids positioned in a small circle */
+  .floating-polaroids-container .polaroid:nth-child(1) {
+    top: -3% !important;
+    left: 50% !important;
+    transform: translateX(-50%) rotate(var(--rotate, 0deg)) !important;
+  }
+  
+  .floating-polaroids-container .polaroid:nth-child(3) {
+    top: 20% !important;
+    right: 2% !important;
+  }
+  
+  .floating-polaroids-container .polaroid:nth-child(6) {
+    bottom: -3% !important;
+    left: 50% !important;
+    transform: translateX(-50%) rotate(var(--rotate, 0deg)) !important;
+  }
+  
+  .floating-polaroids-container .polaroid:nth-child(9) {
+    top: 20% !important;
+    left: 2% !important;
+  }
+  
+  /* Hide additional polaroids on small screens to prevent overlap */
+  .floating-polaroids-container .polaroid:nth-child(2),
+  .floating-polaroids-container .polaroid:nth-child(4),
+  .floating-polaroids-container .polaroid:nth-child(5),
+  .floating-polaroids-container .polaroid:nth-child(7),
+  .floating-polaroids-container .polaroid:nth-child(8),
+  .floating-polaroids-container .polaroid:nth-child(10),
+  .floating-polaroids-container .polaroid:nth-child(11),
+  .floating-polaroids-container .polaroid:nth-child(12),
+  .floating-polaroids-container .polaroid:nth-child(13),
+  .floating-polaroids-container .polaroid:nth-child(14) {
+    display: none !important;
+  }
+}
+
+/* Enhanced styles for circular polaroid arrangement */
+@media (min-width: 769px) {
+  /* Create a circular/elliptical path feel */
+  .floating-polaroids-container {
+    perspective: 1500px; /* Enhanced perspective for better 3D effect */
+    transform-style: preserve-3d;
+  }
+  
+  /* Set transform origins based on position in the circle */
+  /* Top polaroids */
+  .floating-polaroids-container .polaroid:nth-child(1),
+  .floating-polaroids-container .polaroid:nth-child(2),
+  .floating-polaroids-container .polaroid:nth-child(10) {
+    transform-origin: center bottom;
+    z-index: 10; /* Higher z-index for top polaroids */
+  }
+  
+  /* Right side polaroids */
+  .floating-polaroids-container .polaroid:nth-child(3),
+  .floating-polaroids-container .polaroid:nth-child(4) {
+    transform-origin: left center;
+    z-index: 9; /* Slightly lower z-index for right side */
+  }
+  
+  /* Bottom polaroids */
+  .floating-polaroids-container .polaroid:nth-child(5),
+  .floating-polaroids-container .polaroid:nth-child(6),
+  .floating-polaroids-container .polaroid:nth-child(7) {
+    transform-origin: center top;
+    z-index: 8; /* Lower z-index for bottom polaroids */
+  }
+  
+  /* Left side polaroids */
+  .floating-polaroids-container .polaroid:nth-child(8),
+  .floating-polaroids-container .polaroid:nth-child(9) {
+    transform-origin: right center;
+    z-index: 9; /* Slightly lower z-index for left side */
+  }
+  
+  /* Inner circle polaroids - subtle depth variation */
+  .floating-polaroids-container .polaroid:nth-child(11),
+  .floating-polaroids-container .polaroid:nth-child(12),
+  .floating-polaroids-container .polaroid:nth-child(13),
+  .floating-polaroids-container .polaroid:nth-child(14) {
+    transform-origin: center center;
+    z-index: 7; /* Lowest z-index for inner circle, ensuring they stay behind */
+  }
+  
+  /* Ensure consistent animation application */
+  .floating-polaroids-container .polaroid {
+    animation-play-state: running !important; 
+    animation-fill-mode: forwards !important;
+  }
+    /* Create a subtle highlight effect on the polaroid being hovered without motion */
+  .floating-polaroids-container .polaroid:hover {
+    /* No z-index change to prevent polaroid from coming to the front */
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+    filter: brightness(1.08) contrast(1.08);
+    /* No transform changes to prevent motion */
+  }
+}
+
+.why-section .section-header,
+.venue-types .section-header {
+  position: relative;
+  z-index: 20; /* Ensure section header is above polaroids */
+  width: 1160px; /* Match the width of the features grid */
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: 50px; /* Bottom margin */
+  background-color: rgba(255, 255, 255, 0.9); /* Semi-transparent background */
+  padding: 20px; /* Add padding around the text */
+  border-radius: 20px; /* Rounded corners */
+  backdrop-filter: blur(10px); /* Apply blur effect for modern browsers */
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15); /* Add subtle shadow for depth */
+}
+
+/* Venue Types Section */
+.venue-types-grid {
+  display: flex;
+  gap: 20px;
+  padding: 0;
+  margin: 0 auto; /* Center the grid */
+  width: 1160px; /* Match the exact width of 5 pet cards */
+}
+
+.venue-card {
+  flex: 1;
+  background: var(--neutral-100);
+  border: 1px solid var(--neutral-900);
+  border-radius: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.venue-media {
+  width: 100%;
+  position: relative;
+  padding-bottom: 100%; /* This creates a perfect square */
+  overflow: hidden;
+}
+
+.venue-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.venue-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.venue-info h3 {
+  font-family: var(--font-family-heading);
+  font-size: 24px;
+  font-weight: 500; /* Increased from 400 to 500 for better emphasis */
+  color: var(--neutral-900);
+  margin: 0;
+}
+
+/* Wrapper for CTA section to match the venue-types-grid exactly */
+.cta-section-container {
+  padding: 0;
+  box-sizing: border-box;
+  width: 1160px; /* Match the exact width of 5 pet cards */
+  margin: 0 auto;
+}
+
+/* CTA Section */
+.cta-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 340px;
+  overflow: hidden;
+  border-radius: 20px; /* Added border-radius to match the venue cards */
+  margin: 0 auto; /* Centered */
+  box-shadow: var(--shadow-md); /* Added shadow like the venue cards */
+  border: 1px solid var(--neutral-900); /* Added subtle border to match venue cards */
+  padding: 0; /* Remove padding inside the CTA section */
+  width: 100%; /* Let it take the same width constraints as venue-types-grid */
+}
+
+.cta-image {
+  height: 100%;
+  overflow: hidden;
+}
+
+.cta-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cta-content {
+  width: 100%;
+  height: 100%;
+  background-color: var(--neutral-900);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 40px;
+  gap: 40px;
+}
+
+.cta-text {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  text-align: left;
+}
+
+.cta-text h2 {
+  font-family: var(--font-family-heading);
+  font-size: 32px;
+  color: var(--neutral-100);
+  font-weight: 500;
+  text-align: left;
+  margin: 0;
+}
+
+.cta-text p {
+  font-family: var(--font-family-base);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--neutral-100);
+  margin: 0;
+  text-align: left;
+}
+
+.venue-info .hero-buttons {
+  margin-top: 5px;
+  justify-content: flex-start;
+}
+
+.venue-info .hero-buttons .btn-outline {
+  background-color: var(--neutral-900); /* Black background */
+  color: var(--neutral-100); /* White text */
+  border: 2px solid var(--neutral-100); /* White border */
+}
+
+.venue-info .hero-buttons .btn-outline:hover {
+  background-color: var(--neutral-100); /* White background on hover */
+  color: var(--neutral-900); /* Black text on hover */
+  border-color: var(--neutral-900); /* Black border on hover */
+}
+
+.cta-content .hero-buttons {
+  align-self: flex-start;
+}
+
+.pet-type-card h3 {
+  margin-bottom: 0;
+  color: var(--neutral-800);
+}
+
+/* Venue Types Section */
+.venue-types {
+  margin-bottom: var(--space-8);
+  padding: var(--space-5) 0;
+  background-color: var(--neutral-100);
+}
+
+.venue-types-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-5);
+  width: 1160px; /* Match the exact width of 5 pet cards */
+  margin: 0 auto;
+  padding: 0; /* Remove padding to maintain exact width */
+}
+
+.venue-type-card {
+  background-color: var(--neutral-100);
+  border-radius: 20px;
+  padding: var(--space-5);
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid var(--neutral-200);
+}
+
+.venue-type-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--primary-300);
+}
+
+.venue-icon {
+  font-size: var(--font-size-4xl);
+  margin-bottom: var(--space-4);
+  display: block;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.venue-type-card h3 {
+  margin-bottom: 0;
+  color: var(--neutral-800);
+}
+
+/* Remove completely the duplicate CTA Section definition */
+
+/* Ensure consistent text styling and remove unnecessary elements */
+
+/* Button styles for the CTA section */
+.cta-content .hero-buttons {
+  align-self: flex-start;
+}
+
+.cta-content .btn-black {
+  background-color: var(--neutral-900);
+  border: 2px solid var(--neutral-100);
+  color: var(--neutral-100);
+  font-size: 1.1rem;
+  padding: 12px 30px;
+  font-weight: var(--font-weight-semibold);
+  transition: all var(--transition-normal);
+}
+
+.cta-content .btn-black:hover {
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  border-color: var(--neutral-900);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Featured Section */
+.featured-section {
+  background-color: var(--neutral-100);
+  padding: var(--space-12) 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.featured-section::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  left: -100px;
+  width: 300px;
+  height: 300px;
+  background: var(--primary-100);
+  border-radius: 50%;
+  z-index: 0;
+}
+
+.featured-section::after {
+  content: '';
+  position: absolute;
+  bottom: -100px;
+  right: -100px;
+  width: 300px;
+  height: 300px;
+  background: var(--accent-100);
+  border-radius: 50%;
+  z-index: 0;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: var(--space-10);
+  position: relative;
+  z-index: 1;
+}
+
+.section-header h2 {
+  font-size: var(--font-size-3xl);
+  color: var(--neutral-900);
+  margin-bottom: var(--space-3);
+  font-weight: var(--font-weight-bold);
+}
+
+.section-subtitle {
+  font-size: var(--font-size-lg);
+  color: var(--neutral-700);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-6);
+  max-width: var(--container-max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+  position: relative;
+  z-index: 1;
+}
+
+.feature-card {
+  background: var(--neutral-100);
+  border-radius: 20px;
+  padding: var(--space-6);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--neutral-900);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+  background-color: rgba(255, 255, 255, 0.97); /* More opaque background */
+  backdrop-filter: blur(10px); /* Apply stronger blur effect for modern browsers */
+  z-index: 20; /* Ensure features are above polaroids */
+  min-height: 220px; /* Set minimum height for consistency */
+  justify-content: center; /* Center content vertically */
+  position: relative; /* For proper z-index stacking */
+  transition: box-shadow 0.3s ease; /* Removed transform transition */
+}
+
+.feature-card:hover {
+  /* Removed transform that caused upward motion */
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25), 0 5px 15px rgba(0, 0, 0, 0.15);
+}
+
+.feature-icon {
+  font-size: 46px; /* Increased size */
+  margin-bottom: var(--space-2);
+  display: block;
+  filter: drop-shadow(0 0 12px rgba(245, 197, 219, 0.8)) 
+         drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.feature-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.feature-title h3 {
+  font-size: 28px; /* Increased font size */
+  font-weight: 500;
+  margin: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .hero {
+    height: 400px;
+  }
+  
+  .hero h1 {
+    font-size: 2.2rem;
+  }
+  
+  .hero p {
+    font-size: 1.1rem;
+  }
+  
+  .pet-types h2,
+  .venue-types h2,
+  .cta-text h2 {
+    font-size: 1.8rem;
+  }
+  
+  .pet-types-grid,
+  .venue-types-grid,
+  .why-section .features-grid,
+  .cta-section-container {
+    width: auto;
+    max-width: 90%;
+    padding: 0 20px;
+  }
+  
+  .section-header {
+    padding: 0 20px;
+    width: auto;
+  }
+  
+  .content {
+    padding: 60px 0;
+  }
+  
+  .cta-section {
+    grid-template-columns: 1fr;
+    height: auto;
+    margin: 40px auto 0;
+  }
+  
+  .cta-image {
+    height: 240px;
+  }
+  
+  .cta-content {
+    padding: 40px;
+  }
+  
+  /* Hide specific polaroids on smaller screens for better composition */
+  .floating-polaroids-container .polaroid:nth-child(2),
+  .floating-polaroids-container .polaroid:nth-child(4),
+  .floating-polaroids-container .polaroid:nth-child(7),
+  .floating-polaroids-container .polaroid:nth-child(10),
+  .floating-polaroids-container .polaroid:nth-child(13),
+  .floating-polaroids-container .polaroid:nth-child(14) {
+    display: none;
+  }
+  
+  /* Adjust spacing on remaining polaroids */
+  .floating-polaroids-container .polaroid {
+    width: 180px; /* Smaller polaroids on mobile */
+  }
+  
+  .floating-polaroids-container .polaroid img {
+    height: 150px; /* Smaller images on mobile */
+  }
+  
+  .why-section {
+    margin: 80px 0 80px; /* Less margin on smaller screens */
+    min-height: 750px; /* Reduced min-height for smaller screens */
+  }
+    .why-section .features-grid,
+  .why-section .section-header {
+    width: 90%; /* Use percentage width on smaller screens */
+    max-width: 600px; /* Set a maximum width */
+    gap: var(--space-4); /* Slightly reduced gap on smaller screens */
+  }
+    /* Ensure section header remains visible */
+  .why-section .section-header {
+    background-color: rgba(255, 255, 255, 0.9); /* More opaque on small screens */
+    padding: 15px;
+    margin-bottom: 30px;
+  }
+    /* Adjust feature cards for mobile */
+  .feature-card {
+    padding: var(--space-4);
+    min-height: 180px;
+  }
+  
+  .feature-icon {
+    font-size: 36px;
+  }
+  
+  .feature-title h3 {
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero {
+    height: 300px;
+  }
+  
+  .hero h1 {
+    font-size: 1.8rem;
+  }
+  
+  .hero p {
+    font-size: 1rem;
+  }
+  
+  .hero .btn {
+    font-size: 1rem;
+    padding: 10px 20px;
+  }
+  
+  .pet-icon,
+  .venue-icon {
+    font-size: 2.5rem;
+  }
+  
+  .cta-section-container {
+    padding: 0 15px;
+  }
+  
+  .cta-section {
+    grid-template-columns: 1fr;
+    margin: 30px auto 0;
+  }
+  
+  .cta-image {
+    height: 200px;
+  }
+  
+  .cta-content {
+    padding: 30px 20px;
+  }
+  
+  .cta-text h2 {
+    font-size: 24px;
+  }
+  
+  /* Keep only a minimal set of polaroids on very small screens */
+  .floating-polaroids-container .polaroid:nth-child(1),
+  .floating-polaroids-container .polaroid:nth-child(3),
+  .floating-polaroids-container .polaroid:nth-child(5),
+  .floating-polaroids-container .polaroid:nth-child(8),
+  .floating-polaroids-container .polaroid:nth-child(11) {
+    display: block; /* Show only these polaroids */
+  }
+  
+  .floating-polaroids-container .polaroid:not(:nth-child(1)):not(:nth-child(3)):not(:nth-child(5)):not(:nth-child(8)):not(:nth-child(11)) {
+    display: none; /* Hide all other polaroids */
+  }
+  
+  .floating-polaroids-container .polaroid {
+    width: 150px; /* Even smaller polaroids on very small screens */
+  }
+  
+  .floating-polaroids-container .polaroid img {
+    height: 120px; /* Even smaller images on very small screens */
+  }
+  
+  .floating-polaroids-container .polaroid p {
+    font-size: 16px; /* Smaller text on very small screens */
+  }
+  
+  /* Ensure the section header is very visible */
+  .why-section .section-header {
+    background-color: rgba(255, 255, 255, 0.95);
+    margin-bottom: 30px;
+    padding: 15px;
+  }
+}
+
+/* Floating Pet Icons */
+.floating-pet-icons-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2; /* Between hero content (z-index 3) and decoration (z-index 1) */
+}
+
+.floating-pet-icon {
+  position: absolute;
+  font-size: 48px; /* Increased from 42px to 48px for bigger base size */
+  /* Use only the float animation for transform and the breathe effect now uses filter */
+  animation: 
+    float 20s ease-in-out infinite alternate,
+    fade-in-out 12s ease-in-out infinite alternate,
+    pulse 8s ease-in-out infinite; /* Renamed to pulse to avoid transform conflicts */
+  /* Enhanced with stronger glow and drop shadow for better visibility */
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.85)) 
+         drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5))
+         drop-shadow(0 0 8px rgba(255, 223, 128, 0.5)); /* Subtle yellow glow */
+  /* Add slight rotation to each icon for more dynamic movement */
+  transform-origin: center center;
+}
+
+@keyframes float {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(var(--scale, 1));
+  }
+  20% {
+    transform: translate(25px, 15px) rotate(8deg) scale(var(--scale, 1));
+  }
+  40% {
+    transform: translate(-15px, 30px) rotate(-5deg) scale(var(--scale, 1));
+  }
+  60% {
+    transform: translate(20px, -25px) rotate(3deg) scale(var(--scale, 1));
+  }
+  80% {
+    transform: translate(-20px, 10px) rotate(-8deg) scale(var(--scale, 1));
+  }
+  100% {
+    transform: translate(-25px, -30px) rotate(-10deg) scale(var(--scale, 1));
+  }
+}
+
+/* New fade-in-out animation */
+@keyframes fade-in-out {
+  0%, 100% {
+    opacity: var(--start-opacity, 1);
+  }
+  40% {
+    opacity: var(--mid-opacity, 0.7);
+  }
+  60% {
+    opacity: var(--mid-opacity, 0.7);
+  }
+}
+
+/* For smaller screens, show fewer icons and make them smaller */
+@media (max-width: 768px) {  .floating-pet-icon {
+    font-size: 42px; /* Increased from 36px to 42px */
+    /* Ensure animations work with scale transform */
+    animation: 
+      float-mobile 20s ease-in-out infinite alternate,
+      fade-in-out 12s ease-in-out infinite alternate,
+      pulse 8s ease-in-out infinite;
+  }
+  @keyframes float-mobile {
+    0% { transform: translate(0, 0) rotate(0deg) scale(0.8); }
+    20% { transform: translate(15px, 10px) rotate(8deg) scale(0.8); }
+    40% { transform: translate(-10px, 20px) rotate(-5deg) scale(0.8); }
+    60% { transform: translate(15px, -15px) rotate(3deg) scale(0.8); }
+    80% { transform: translate(-15px, 5px) rotate(-8deg) scale(0.8); }
+    100% { transform: translate(-15px, -20px) rotate(-10deg) scale(0.8); }
+  }
+}
+
+@media (max-width: 480px) {
+  .floating-pet-icon {
+    font-size: 36px; /* Increased from 32px to 36px */
+    /* Ensure animations work with scale transform */
+    animation: 
+      float-small 20s ease-in-out infinite alternate,
+      fade-in-out 12s ease-in-out infinite alternate,
+      pulse 8s ease-in-out infinite;
+  }
+  
+  @keyframes float-small {
+    0% { transform: translate(0, 0) rotate(0deg) scale(0.6); }
+    20% { transform: translate(10px, 8px) rotate(8deg) scale(0.6); }
+    40% { transform: translate(-8px, 15px) rotate(-5deg) scale(0.6); }
+    60% { transform: translate(10px, -10px) rotate(3deg) scale(0.6); }
+    80% { transform: translate(-10px, 5px) rotate(-8deg) scale(0.6); }
+    100% { transform: translate(-12px, -15px) rotate(-10deg) scale(0.6); }
+  }
+}
+
+/* Breathing animation - using transform: scale without affecting position */
+@keyframes breathe {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+/* New pulse animation using filter instead of transform to avoid conflicts */
+@keyframes pulse {
+  0% { 
+    filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.85)) 
+           drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5))
+           drop-shadow(0 0 8px rgba(255, 223, 128, 0.5)); 
+  }
+  50% { 
+    filter: drop-shadow(0 0 18px rgba(255, 255, 255, 1)) 
+           drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6))
+           drop-shadow(0 0 15px rgba(255, 223, 128, 0.7)); 
+  }
+  100% { 
+    filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.85)) 
+           drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5))
+           drop-shadow(0 0 8px rgba(255, 223, 128, 0.5)); 
+  }
+}
+
+/* Animation keyframes */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Enhanced styles for circular polaroid arrangement */
+@media (min-width: 769px) {
+  /* Create a circular/elliptical path feel */
+  .floating-polaroids-container {
+    perspective: 1500px; /* Enhanced perspective for better 3D effect */
+    transform-style: preserve-3d;
+  }
+  
+  /* Set transform origins based on position in the circle */
+  /* Top polaroids */
+  .floating-polaroids-container .polaroid:nth-child(1),
+  .floating-polaroids-container .polaroid:nth-child(2),
+  .floating-polaroids-container .polaroid:nth-child(10) {
+    transform-origin: center bottom;
+    z-index: 15; /* Higher z-index for top polaroids */
+  }
+  
+  /* Right side polaroids */
+  .floating-polaroids-container .polaroid:nth-child(3),
+  .floating-polaroids-container .polaroid:nth-child(4) {
+    transform-origin: left center;
+    z-index: 13; /* Slightly lower z-index for right side */
+  }
+  
+  /* Bottom polaroids */
+  .floating-polaroids-container .polaroid:nth-child(5),
+  .floating-polaroids-container .polaroid:nth-child(6),
+  .floating-polaroids-container .polaroid:nth-child(7) {
+    transform-origin: center top;
+    z-index: 11; /* Lower z-index for bottom polaroids */
+  }
+  
+  /* Left side polaroids */
+  .floating-polaroids-container .polaroid:nth-child(8),
+  .floating-polaroids-container .polaroid:nth-child(9) {
+    transform-origin: right center;
+    z-index: 13; /* Slightly lower z-index for left side */
+  }
+  
+  /* Inner circle polaroids - subtle depth variation */
+  .floating-polaroids-container .polaroid:nth-child(11),
+  .floating-polaroids-container .polaroid:nth-child(12),
+  .floating-polaroids-container .polaroid:nth-child(13),
+  .floating-polaroids-container .polaroid:nth-child(14) {
+    transform-origin: center center;
+    z-index: 5; /* Lowest z-index for inner circle, ensuring they stay behind */
+  }
+  
+  /* Ensure consistent animation application */
+  .floating-polaroids-container .polaroid {
+    animation-play-state: running !important; 
+    animation-fill-mode: forwards !important;
+  }
+  
+  /* Create a subtle highlight effect on the polaroid being hovered without motion */
+  .floating-polaroids-container .polaroid:hover {
+    /* No z-index change to prevent polaroid from coming to the front */
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+    filter: brightness(1.08) contrast(1.08);
+    /* No transform changes to prevent motion */
+  }
+}

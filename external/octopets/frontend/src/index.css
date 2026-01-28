@@ -1,0 +1,225 @@
+@import './styles/variables.css';
+@import './styles/modern-components.css';
+@import './styles/utilities.css';
+@import './styles/Button.css';
+@import url('https://fonts.googleapis.com/css2?family=Cal+Sans&family=Outfit:wght@100..900&display=swap');
+
+/* Base styling for the entire application */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  color: var(--neutral-800);
+  background-color: var(--neutral-100);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Ensure full page height */
+html, body, #root {
+  height: 100%;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* Reset margins and padding */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Typography enhancements */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family-heading);
+  font-weight: var(--font-weight-medium); /* Changed from semibold to medium for better balance */
+  line-height: var(--line-height-tight);
+  color: var(--neutral-900);
+  margin-bottom: var(--space-4);
+}
+
+h1 {
+  font-size: var(--font-size-4xl);
+  margin-bottom: var(--space-6);
+  font-weight: var(--font-weight-bold); /* Making h1 bolder as it's typically used for hero text */
+}
+
+h2 {
+  font-size: var(--font-size-3xl);
+  margin-bottom: var(--space-5);
+}
+
+h3 {
+  font-size: var(--font-size-2xl);
+}
+
+h4 {
+  font-size: var(--font-size-xl);
+}
+
+h5 {
+  font-size: var(--font-size-lg);
+}
+
+h6 {
+  font-size: var(--font-size-md);
+}
+
+p {
+  margin-bottom: var(--space-4);
+  line-height: var(--line-height-relaxed);
+}
+
+a {
+  color: var(--primary-600);
+  text-decoration: none;
+  transition: all var(--transition-normal);
+  position: relative;
+  font-weight: var(--font-weight-medium);
+}
+
+a:hover {
+  color: var(--primary-700);
+  text-decoration: none;
+}
+
+a:not(.btn):not(.nav-link):not(.navbar-logo):not(.card):not(.pet-type-card):not(.venue-type-card):after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 2px;
+  bottom: -2px;
+  left: 0;
+  background-color: var(--primary-600);
+  transition: width var(--transition-normal);
+}
+
+a:not(.btn):not(.nav-link):not(.navbar-logo):not(.card):not(.pet-type-card):not(.venue-type-card):hover:after {
+  width: 100%;
+}
+
+/* Form elements - global styling */
+input, select, textarea, button {
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-md);
+}
+
+input, select, textarea {
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+
+label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-weight: var(--font-weight-medium);
+  color: var(--neutral-700);
+}
+
+/* Container styles */
+.container {
+  width: 100%;
+  max-width: var(--container-max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+/* Section styles */
+.section {
+  padding: var(--space-10) 0;
+}
+
+.section-sm {
+  padding: var(--space-6) 0;
+}
+
+.section-lg {
+  padding: var(--space-16) 0;
+}
+
+/* Modern dividers */
+hr {
+  border: none;
+  height: 1px;
+  background-color: var(--neutral-300);
+  margin: var(--space-6) 0;
+}
+
+.divider-gradient {
+  height: 2px;
+  background: var(--gradient-pastel-mix);
+  border: none;
+  margin: var(--space-6) 0;
+}
+
+/* List styles */
+ul, ol {
+  margin: 0 0 var(--space-4) var(--space-6);
+}
+
+li {
+  margin-bottom: var(--space-2);
+}
+
+/* Modern scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--neutral-200);
+  border-radius: var(--border-radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--neutral-400);
+  border-radius: var(--border-radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neutral-500);
+}
+
+/* Basic image styling */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Remove list styling */
+ul, ol {
+  list-style: none;
+}
+
+/* Reset button styling */
+button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+button:focus {
+  outline: none;
+}
+
+/* Container for responsive layout */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .container {
+    padding: 0 15px;
+  }
+}

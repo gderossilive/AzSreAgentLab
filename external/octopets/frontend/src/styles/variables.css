@@ -1,0 +1,203 @@
+:root {
+  /* Primary Colors - Pink from Figma */
+  --primary-100: #fcf0f5;
+  --primary-200: #f9e0eb;
+  --primary-300: #f5c5db;
+  --primary-400: #f0a9cc;
+  --primary-500: #eb8dbc;
+  --primary-600: #e671ad;
+  --primary-700: #d14c94;
+  --primary-800: #b63680;
+  --primary-900: #8f286a;
+
+  /* Secondary Colors - Yellow from Figma */
+  --secondary-100: #fff9e6;
+  --secondary-200: #fff4cc;
+  --secondary-300: #feebb4;
+  --secondary-400: #fee29b;
+  --secondary-500: #fedd55;
+  --secondary-600: #ffd428;
+  --secondary-700: #e6bb1c;
+  --secondary-800: #cca114;
+  --secondary-900: #a6810e;
+  /* Neutral Colors - Matching Figma */
+  --neutral-100: #ffffff;
+  --neutral-200: #f9f7f5;
+  --neutral-300: #f5ede2;
+  --neutral-400: #e0d6c8;
+  --neutral-500: #c0b5a2;
+  --neutral-600: #a0947c;
+  --neutral-700: #807457;
+  --neutral-800: #4d4531;
+  --neutral-900: #000000; /* Used for text in Figma */
+  
+  /* Legacy color names for backward compatibility */
+  --primary-color: var(--primary-600);
+  --secondary-color: var(--secondary-600);
+  --accent-color: var(--accent-500);
+  --text-color: var(--neutral-800);
+  --light-color: var(--neutral-100);
+  --dark-color: var(--neutral-900);
+  --gray-color: var(--neutral-600);
+  --light-gray: var(--neutral-200);
+  --dark-gray: var(--neutral-700);
+  --border-radius: 12px;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  
+  /* Accent Colors - Figma Patterns */
+  --accent-100: #fff8e1;
+  --accent-200: #ffecb3;
+  --accent-300: #ffe082;
+  --accent-400: #ffd54f;
+  --accent-500: #fedd55; /* Yellow from Figma */
+  --accent-600: #ffc107;
+  --accent-700: #ffb300;
+  --accent-800: #ffa000;
+  --accent-900: #ff8f00;
+  
+  /* Success Colors - Soft mint */
+  --success-100: #e8f8f3;
+  --success-200: #d1f0e6;
+  --success-300: #a8e3d2;
+  --success-400: #7fd6bd;
+  --success-500: #56c9a8;
+  --success-600: #37b998;
+  --success-700: #28a383;
+  --success-800: #1c8c6e;
+  --success-900: #116f59;
+
+  /* Warning Colors - Soft amber */
+  --warning-100: #fff8e6;
+  --warning-200: #fff0c9;
+  --warning-300: #ffe6a1;
+  --warning-400: #ffdb79;
+  --warning-500: #ffd152;
+  --warning-600: #ffc629;
+  --warning-700: #e8ab1c;
+  --warning-800: #cc9310;
+  --warning-900: #a97905;
+  
+  /* Error Colors - Soft rose */
+  --error-100: #fceef0;
+  --error-200: #f8dce1;
+  --error-300: #f4b7c3;
+  --error-400: #ef92a4;
+  --error-500: #ea6c86;
+  --error-600: #e54667;  --error-700: #d13258;  --error-800: #b32347;
+  --error-900: #911538;  
+  
+  /* Typography - Cal Sans as primary font */
+  --font-family-base: 'Cal Sans', sans-serif;
+  --font-family-heading: 'Cal Sans', sans-serif;
+  --font-family-logo: 'Cal Sans', sans-serif;
+  --font-family-button: 'Cal Sans', sans-serif;
+  
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.875rem;   /* 14px */
+  --font-size-md: 1rem;       /* 16px */
+  --font-size-lg: 1.125rem;   /* 18px */
+  --font-size-xl: 1.25rem;    /* 20px */
+  --font-size-2xl: 1.5rem;    /* 24px */
+  --font-size-3xl: 1.875rem;  /* 30px */
+  --font-size-4xl: 2.25rem;   /* 36px */
+  --font-size-5xl: 3rem;      /* 48px */
+
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* Spacing - Refined for more breathing room */
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.5rem;    /* 24px */
+  --space-6: 2rem;      /* 32px */
+  --space-8: 3rem;      /* 48px */
+  --space-10: 4rem;     /* 64px */
+  --space-12: 6rem;     /* 96px */
+  --space-16: 8rem;     /* 128px */
+  --space-20: 10rem;    /* 160px */
+
+  /* Borders - More generous rounding */
+  --border-radius-sm: 0.25rem;  /* 4px */
+  --border-radius-md: 0.5rem;   /* 8px */
+  --border-radius-lg: 1rem;     /* 16px */
+  --border-radius-xl: 1.5rem;   /* 24px */
+  --border-radius-2xl: 2rem;    /* 32px */
+  --border-radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+
+  /* Transitions */
+  --transition-fast: 150ms;
+  --transition-normal: 300ms;
+  --transition-slow: 500ms;
+    /* Z-index */
+  --z-index-dropdown: 1000;
+  --z-index-sticky: 1100;
+  --z-index-fixed: 1200;
+  --z-index-modal: 1300;
+  --z-index-popover: 1400;
+  --z-index-tooltip: 1500;
+
+  /* Component Specific */
+  --header-height: 70px;
+  --footer-height: 250px;
+  --container-max-width: 1200px;
+  --sidebar-width: 300px;
+    /* Input styling */
+  --input-height: 48px;
+  --input-padding: 0 var(--space-4);
+  --input-border: 1px solid var(--neutral-300);
+  --input-border-radius: var(--border-radius-lg);
+  --input-shadow: var(--shadow-sm);
+  --input-focus-border: 1px solid var(--primary-400);
+  --input-focus-shadow: 0 0 0 3px rgba(78, 174, 207, 0.15);
+  
+  /* Button styling */
+  --button-border-radius: var(--border-radius-full);
+  --button-padding-sm: var(--space-1) var(--space-3);
+  --button-padding-md: var(--space-2) var(--space-5);
+  --button-padding-lg: var(--space-3) var(--space-6);
+  
+  /* Card styling */
+  --card-border-radius: var(--border-radius-xl);
+  --card-padding: var(--space-5);
+  --card-shadow: var(--shadow-md);
+  --card-hover-shadow: var(--shadow-lg);
+    /* Gradients */
+  --gradient-primary: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-800) 100%);
+  --gradient-secondary: linear-gradient(135deg, var(--secondary-500) 0%, var(--secondary-700) 100%);
+  --gradient-accent: linear-gradient(135deg, var(--accent-400) 0%, var(--accent-600) 100%);
+  --gradient-success: linear-gradient(135deg, var(--success-400) 0%, var(--success-600) 100%);
+  --gradient-warning: linear-gradient(135deg, var(--warning-400) 0%, var(--warning-600) 100%);
+  --gradient-error: linear-gradient(135deg, var(--error-400) 0%, var(--error-600) 100%);
+  --gradient-light: linear-gradient(135deg, var(--neutral-100) 0%, var(--neutral-200) 100%);
+  
+  /* New modern gradients */
+  --gradient-teal: linear-gradient(135deg, #0ebeaa 0%, #088073 100%);
+  /* Gradients from Figma */
+  --gradient-hero: linear-gradient(to bottom, #f5c5db 0%, #ffffff 100%);
+  --gradient-background: linear-gradient(to bottom, #f5e9d8 0%, #ffffff 38%, #ffffff 100%);  --gradient-card-radial: radial-gradient(circle, var(--primary-300) 3.5%, rgba(255, 255, 255, 0) 100%), 
+                         radial-gradient(circle, var(--neutral-300) 3.5%, rgba(255, 255, 255, 0) 100%),
+                         var(--neutral-300);
+  --gradient-footer: linear-gradient(to right, #fedd55 0%, #f5c5db 48%, #fd7f40 100%);
+  --gradient-yellow: linear-gradient(135deg, #fedd55 0%, #ffa000 100%);
+  --gradient-coral: linear-gradient(135deg, #f5c5db 0%, #e671ad 100%);
+  --gradient-pastel-mix: linear-gradient(135deg, var(--primary-300) 0%, var(--secondary-500) 100%);
+}
+
+/* Add font */
+@import url('https://fonts.googleapis.com/css2?family=Cal+Sans&family=Outfit:wght@100..900&display=swap');
