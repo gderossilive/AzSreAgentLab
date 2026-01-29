@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fresh Groceries - Demo Store</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+    }
+    
+    header {
+      background: linear-gradient(135deg, #2d5016 0%, #4a7c23 100%);
+      color: white;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    header h1 {
+      font-size: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .status-bar {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: rgba(255,255,255,0.1);
+      border-radius: 20px;
+      font-size: 0.875rem;
+    }
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4ade80;
+    }
+    
+    .status-dot.warning {
+      background: #fbbf24;
+    }
+    
+    .status-dot.error {
+      background: #f87171;
+      animation: pulse 1s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+    
+    button {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: #2d5016;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #1e3a0f;
+    }
+    
+    .btn-danger {
+      background: #dc2626;
+      color: white;
+    }
+    
+    .btn-danger:hover {
+      background: #b91c1c;
+    }
+    
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #374151;
+    }
+    
+    .products-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .product-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      transition: all 0.2s;
+    }
+    
+    .product-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    }
+    
+    .product-card.error {
+      border: 2px solid #fecaca;
+      background: #fef2f2;
+    }
+    
+    .product-emoji {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    
+    .product-name {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    
+    .product-category {
+      color: #6b7280;
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .product-price {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #2d5016;
+      margin-bottom: 1rem;
+    }
+    
+    .inventory-status {
+      padding: 0.5rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      text-align: center;
+    }
+    
+    .inventory-status.loading {
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+    
+    .inventory-status.available {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    
+    .inventory-status.error {
+      background: #fecaca;
+      color: #991b1b;
+    }
+    
+    .error-details {
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      background: #fee2e2;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      color: #7f1d1d;
+    }
+    
+    .logs-panel {
+      margin-top: 2rem;
+      background: #1e1e1e;
+      border-radius: 12px;
+      padding: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .logs-panel h3 {
+      color: #9ca3af;
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .log-entry {
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 0.75rem;
+      padding: 0.25rem 0;
+      border-bottom: 1px solid #333;
+    }
+    
+    .log-entry.error {
+      color: #f87171;
+    }
+    
+    .log-entry.warn {
+      color: #fbbf24;
+    }
+    
+    .log-entry.info {
+      color: #60a5fa;
+    }
+    
+    .log-entry .timestamp {
+      color: #6b7280;
+    }
+    
+    .supplier-status-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    .supplier-status-card h3 {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .rate-limit-bar {
+      height: 20px;
+      background: #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+    
+    .rate-limit-fill {
+      height: 100%;
+      background: #4ade80;
+      transition: all 0.3s;
+    }
+    
+    .rate-limit-fill.warning {
+      background: #fbbf24;
+    }
+    
+    .rate-limit-fill.danger {
+      background: #f87171;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🥬 Fresh Groceries</h1>
+    <div class="status-bar">
+      <div class="status-indicator">
+        <span class="status-dot" id="apiStatus"></span>
+        <span id="apiStatusText">API Connected</span>
+      </div>
+      <div class="status-indicator">
+        <span class="status-dot" id="supplierStatus"></span>
+        <span id="supplierStatusText">Supplier: OK</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="supplier-status-card">
+      <h3>📊 Supplier API Rate Limit Status</h3>
+      <div class="rate-limit-bar">
+        <div class="rate-limit-fill" id="rateLimitFill" style="width: 0%"></div>
+      </div>
+      <p id="rateLimitText">Loading...</p>
+    </div>
+
+    <div class="controls">
+      <button class="btn-primary" onclick="loadProducts()">🔄 Refresh Products</button>
+      <button class="btn-primary" onclick="checkAllInventory()">📦 Check All Inventory</button>
+      <button class="btn-danger" onclick="triggerRateLimit()">⚠️ Trigger Rate Limit (Demo)</button>
+      <button class="btn-secondary" onclick="clearLogs()">🗑️ Clear Logs</button>
+    </div>
+
+    <div class="products-grid" id="productsGrid">
+      <!-- Products will be loaded here -->
+    </div>
+
+    <div class="logs-panel">
+      <h3>📋 Application Logs</h3>
+      <div id="logsContainer"></div>
+    </div>
+  </main>
+
+  <script src="/config.js"></script>
+  <script>
+    const API_BASE = window.API_URL || 'http://localhost:3100';
+    let products = [];
+
+    function log(level, message, data = {}) {
+      const container = document.getElementById('logsContainer');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${level}`;
+      const time = new Date().toISOString().split('T')[1].split('.')[0];
+      entry.innerHTML = `<span class="timestamp">[${time}]</span> <strong>${level.toUpperCase()}</strong> ${message} ${Object.keys(data).length ? JSON.stringify(data) : ''}`;
+      container.insertBefore(entry, container.firstChild);
+      
+      // Keep only last 50 logs
+      while (container.children.length > 50) {
+        container.removeChild(container.lastChild);
+      }
+    }
+
+    function clearLogs() {
+      document.getElementById('logsContainer').innerHTML = '';
+      log('info', 'Logs cleared');
+    }
+
+    async function fetchWithLogging(url, options = {}) {
+      log('info', `Fetching ${url}`);
+      try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ error: response.statusText }));
+          throw { status: response.status, ...error };
+        }
+        return await response.json();
+      } catch (error) {
+        log('error', `Request failed: ${url}`, { status: error.status, error: error.error || error.message });
+        throw error;
+      }
+    }
+
+    async function updateSupplierStatus() {
+      try {
+        const status = await fetchWithLogging(`${API_BASE}/api/supplier/status`);
+        const percentage = (status.requestCount / status.limit) * 100;
+        
+        const fill = document.getElementById('rateLimitFill');
+        fill.style.width = `${percentage}%`;
+        fill.className = 'rate-limit-fill';
+        
+        const dot = document.getElementById('supplierStatus');
+        dot.className = 'status-dot';
+        
+        if (status.isRateLimited) {
+          fill.classList.add('danger');
+          dot.classList.add('error');
+          document.getElementById('supplierStatusText').textContent = 'Supplier: RATE LIMITED';
+          log('error', 'Supplier API is rate limited!', status);
+        } else if (percentage > 70) {
+          fill.classList.add('warning');
+          dot.classList.add('warning');
+          document.getElementById('supplierStatusText').textContent = 'Supplier: Warning';
+        }
+        
+        document.getElementById('rateLimitText').textContent = 
+          `${status.requestCount} / ${status.limit} requests used (${status.remaining} remaining)`;
+          
+      } catch (error) {
+        document.getElementById('apiStatus').classList.add('error');
+        document.getElementById('apiStatusText').textContent = 'API Disconnected';
+      }
+    }
+
+    async function loadProducts() {
+      log('info', 'Loading products...');
+      try {
+        products = await fetchWithLogging(`${API_BASE}/api/products`);
+        renderProducts();
+        log('info', `Loaded ${products.length} products`);
+      } catch (error) {
+        log('error', 'Failed to load products');
+      }
+    }
+
+    function renderProducts() {
+      const grid = document.getElementById('productsGrid');
+      grid.innerHTML = products.map(product => `
+        <div class="product-card" id="product-${product.id}">
+          <div class="product-emoji">${product.image}</div>
+          <div class="product-name">${product.name}</div>
+          <div class="product-category">${product.category}</div>
+          <div class="product-price">$${product.price.toFixed(2)}</div>
+          <div class="inventory-status" id="inventory-${product.id}">
+            <button class="btn-secondary" onclick="checkInventory('${product.id}')">
+              Check Inventory
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function checkInventory(productId) {
+      const statusEl = document.getElementById(`inventory-${productId}`);
+      const cardEl = document.getElementById(`product-${productId}`);
+      
+      statusEl.innerHTML = '<span class="loading">Checking...</span>';
+      statusEl.className = 'inventory-status loading';
+      cardEl.classList.remove('error');
+      
+      try {
+        const data = await fetchWithLogging(`${API_BASE}/api/products/${productId}/inventory`);
+        statusEl.innerHTML = `✅ ${data.inventory.quantityAvailable} in stock`;
+        statusEl.className = 'inventory-status available';
+        log('info', `Inventory check success: ${data.name}`, { quantity: data.inventory.quantityAvailable });
+        await updateSupplierStatus();
+      } catch (error) {
+        cardEl.classList.add('error');
+        statusEl.className = 'inventory-status error';
+        
+        if (error.code === 'SUPPLIER_RATE_LIMIT_429') {
+          statusEl.innerHTML = `
+            ❌ Rate Limited
+            <div class="error-details">
+              Supplier API returned 429. Retry in ${error.retryAfter}s
+            </div>
+          `;
+          log('error', `Rate limit hit for ${productId}`, { retryAfter: error.retryAfter });
+        } else {
+          statusEl.innerHTML = '❌ Failed to check';
+        }
+        await updateSupplierStatus();
+      }
+    }
+
+    async function checkAllInventory() {
+      log('info', 'Checking inventory for all products (batch)...');
+      
+      // Set all to loading state
+      products.forEach(p => {
+        const statusEl = document.getElementById(`inventory-${p.id}`);
+        statusEl.innerHTML = '<span class="loading">Checking...</span>';
+        statusEl.className = 'inventory-status loading';
+      });
+      
+      try {
+        const response = await fetchWithLogging(`${API_BASE}/api/inventory/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productIds: products.map(p => p.id) }),
+        });
+        
+        // Update successful ones
+        response.success.forEach(item => {
+          const statusEl = document.getElementById(`inventory-${item.id}`);
+          statusEl.innerHTML = `✅ ${item.inventory.quantityAvailable} in stock`;
+          statusEl.className = 'inventory-status available';
+        });
+        
+        // Update failed ones
+        response.errors.forEach(item => {
+          const statusEl = document.getElementById(`inventory-${item.productId}`);
+          const cardEl = document.getElementById(`product-${item.productId}`);
+          cardEl.classList.add('error');
+          statusEl.className = 'inventory-status error';
+          
+          if (item.code === 'SUPPLIER_RATE_LIMIT_429') {
+            statusEl.innerHTML = `
+              ❌ Rate Limited
+              <div class="error-details">Retry in ${item.retryAfter}s</div>
+            `;
+          } else {
+            statusEl.innerHTML = '❌ ' + item.error;
+          }
+        });
+        
+        log('info', 'Batch inventory check complete', response.summary);
+        if (response.errors.some(e => e.code === 'SUPPLIER_RATE_LIMIT_429')) {
+          log('error', 'Some products hit rate limit!', { 
+            failed: response.errors.length,
+            successful: response.success.length 
+          });
+        }
+        
+        await updateSupplierStatus();
+      } catch (error) {
+        log('error', 'Batch inventory check failed');
+      }
+    }
+
+    async function triggerRateLimit() {
+      log('warn', 'Triggering rate limit demo - sending 15 rapid requests...');
+      
+      try {
+        const result = await fetchWithLogging(`${API_BASE}/api/demo/trigger-rate-limit`, {
+          method: 'POST',
+        });
+        
+        log('warn', 'Rate limit demo complete', result);
+        
+        if (result.rateLimited > 0) {
+          log('error', `${result.rateLimited} requests were rate limited!`);
+        }
+        
+        await updateSupplierStatus();
+      } catch (error) {
+        log('error', 'Rate limit demo failed');
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', async () => {
+      log('info', 'Application starting...');
+      log('info', `API URL: ${API_BASE}`);
+      
+      await loadProducts();
+      await updateSupplierStatus();
+      
+      // Poll supplier status every 5 seconds
+      setInterval(updateSupplierStatus, 5000);
+    });
+  </script>
+</body>
+</html>

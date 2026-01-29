@@ -181,6 +181,7 @@ Then follow the same happy-path deployment sequence above.
 │   └── IncidentAutomationServiceNow.md  # ServiceNow demo spec
 ├── scripts/
 │   ├── 10-clone-repos.sh  # Bootstrap external repos (optional)
+│   ├── 11-vendor-external-repo.sh  # Vendor another external repo into external/ (modifiable, no nested .git)
 │   ├── 20-az-login.sh     # Azure authentication
 │   ├── 30-deploy-octopets.sh        # Deploy Octopets infrastructure (Azure CLI + Bicep, subscription scope)
 │   ├── 31-deploy-octopets-containers.sh  # Build & deploy containers (ACR remote builds, no Docker)

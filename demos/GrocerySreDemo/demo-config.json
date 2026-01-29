@@ -1,0 +1,19 @@
+{
+  "SubscriptionId": "06dbbc7b-2363-4dd4-9803-95d07f1a8d3e",
+  "Location": "swedencentral",
+  "EnvironmentName": "grocery-sre-demo",
+  "ResourceGroupName": "rg-grocery-sre-demo",
+  "ContainerAppsEnvironmentName": "cae-pu3vvmgkrke3q",
+  "ContainerRegistryName": "crpu3vvmgkrke3q",
+  "ContainerRegistryLoginServer": "crpu3vvmgkrke3q.azurecr.io",
+  "ApiContainerAppName": "ca-api-pu3vvmgkrke3q",
+  "WebContainerAppName": "ca-web-pu3vvmgkrke3q",
+  "ApiUrl": "https://ca-api-pu3vvmgkrke3q.mangoplant-51da0571.swedencentral.azurecontainerapps.io",
+  "WebUrl": "https://ca-web-pu3vvmgkrke3q.mangoplant-51da0571.swedencentral.azurecontainerapps.io",
+  "GrafanaName": "amg-pu3vvmgkrke3q",
+  "GrafanaEndpoint": "https://amg-pu3vvmgkrke3q-bnenf9hdb0erh5e4.cse.grafana.azure.com",
+  "SreAgentName": "sre-agent-grocery-demo",
+  "SreAgentEndpoint": "https://sre-agent-grocery-demo--4e739d60.6d6a35f1.swedencentral.azuresre.ai",
+  "SreAgentPortalUrl": "https://ms.portal.azure.com/#view/Microsoft_Azure_PaasServerless/AgentFrameBlade.ReactView/id/%2Fsubscriptions%2F06dbbc7b-2363-4dd4-9803-95d07f1a8d3e%2FresourceGroups%2Frg-grocery-sre-demo%2Fproviders%2FMicrosoft.App%2Fagents%2Fsre-agent-grocery-demo",
+  "LastImageTag": "20260129083730"
+}

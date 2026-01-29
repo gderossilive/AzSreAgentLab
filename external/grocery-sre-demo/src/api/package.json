@@ -1,0 +1,18 @@
+{
+  "name": "grocery-api",
+  "version": "1.0.0",
+  "description": "Grocery Store API with simulated supplier rate limiting",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "pino": "^8.16.0",
+    "pino-http": "^8.5.0",
+    "pino-loki": "^2.1.3",
+    "prom-client": "^15.1.0"
+  }
+}

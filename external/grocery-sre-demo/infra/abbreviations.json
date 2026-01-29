@@ -1,0 +1,8 @@
+{
+  "resourcesResourceGroups": "rg-",
+  "containerAppsEnvironments": "cae-",
+  "containerApps": "ca-",
+  "containerRegistries": "cr",
+  "logAnalyticsWorkspaces": "log-",
+  "managedGrafana": "amg-"
+}
