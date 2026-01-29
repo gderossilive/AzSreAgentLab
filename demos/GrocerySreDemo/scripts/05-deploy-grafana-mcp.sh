@@ -38,6 +38,14 @@ log_step "Resolving Container Apps environment ID"
 environment_id="$(az containerapp env show -g "$rg_name" -n "$cae_name" --query id -o tsv)"
 [[ -n "$environment_id" ]] || die "Unable to resolve environmentId for $cae_name"
 
+if az containerapp show -g "$rg_name" -n ca-mcp-amg --query "properties.provisioningState" -o tsv >/dev/null 2>&1; then
+  existing_state="$(az containerapp show -g "$rg_name" -n ca-mcp-amg --query "properties.provisioningState" -o tsv)"
+  if [[ "$existing_state" == "Failed" ]]; then
+    log_step "Deleting existing failed Container App ca-mcp-amg"
+    az containerapp delete -g "$rg_name" -n ca-mcp-amg -y --output none
+  fi
+fi
+
 log_step "Remote build: amg-mcp image in ACR"
 dockerfile_path="$repo_root/external/grocery-sre-demo/infra/amg-mcp/Dockerfile"
 [[ -f "$dockerfile_path" ]] || die "Missing Dockerfile: $dockerfile_path"
