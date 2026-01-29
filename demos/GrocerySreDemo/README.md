@@ -59,13 +59,34 @@ cd demos/GrocerySreDemo
 
 The upstream demo pushes structured logs to Loki and queries them via Grafana.
 
-This lab scaffolds the core Azure resources and the app; Loki + MCP require additional setup (and a Grafana token), so they’re intentionally not deployed by default.
+This lab scaffolds the core Azure resources and the app; Loki + MCP are intentionally not deployed by default.
 
 - Upstream Loki query guidance: `knowledge/loki-queries.md`
-- Upstream MCP Bicep module (requires `grafanaToken` as a secret input): `external/grocery-sre-demo/infra/mcp-server.bicep`
+- Token-based Grafana MCP module (may not work in Azure Managed Grafana if service account tokens are disabled): `external/grocery-sre-demo/infra/mcp-server.bicep`
+- Managed-identity Azure Managed Grafana MCP Dockerfile: `external/grocery-sre-demo/infra/amg-mcp/Dockerfile`
+
+### Deploy Loki (optional)
+
+This deploys a `ca-loki` Container App and points the Grocery API at it via `LOKI_HOST`.
+
+```bash
+cd demos/GrocerySreDemo
+./scripts/04-deploy-loki.sh
+```
+
+### Deploy Grafana MCP server (optional)
+
+If your Azure Managed Grafana has service account tokens disabled, use the MI-based Azure Managed Grafana MCP.
+This deploys a `ca-mcp-amg` Container App that exposes an SSE endpoint at `/sse`.
+
+```bash
+cd demos/GrocerySreDemo
+./scripts/05-deploy-grafana-mcp.sh
+```
 
 ## Files
 
 - Infrastructure: `infrastructure/main.bicep`
 - Generated config (no secrets): `demo-config.json`
 - Scripts: `scripts/`
+
