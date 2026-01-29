@@ -38,12 +38,11 @@ log_step "Resolving Container Apps environment ID"
 environment_id="$(az containerapp env show -g "$rg_name" -n "$cae_name" --query id -o tsv)"
 [[ -n "$environment_id" ]] || die "Unable to resolve environmentId for $cae_name"
 
-if az containerapp show -g "$rg_name" -n ca-mcp-amg --query "properties.provisioningState" -o tsv >/dev/null 2>&1; then
-  existing_state="$(az containerapp show -g "$rg_name" -n ca-mcp-amg --query "properties.provisioningState" -o tsv)"
-  if [[ "$existing_state" == "Failed" ]]; then
-    log_step "Deleting existing failed Container App ca-mcp-amg"
-    az containerapp delete -g "$rg_name" -n ca-mcp-amg -y --output none
-  fi
+if az containerapp show -g "$rg_name" -n ca-mcp-amg --query "name" -o tsv >/dev/null 2>&1; then
+  # Stdio pivot requires ingress to be removed; updates can keep the existing ingress config.
+  # Delete/recreate keeps the script behavior deterministic.
+  log_step "Deleting existing Container App ca-mcp-amg (stdio pivot)"
+  az containerapp delete -g "$rg_name" -n ca-mcp-amg -y --output none
 fi
 
 log_step "Remote build: amg-mcp image in ACR"
@@ -64,19 +63,17 @@ template="$demo_root/infrastructure/mcp-amg.bicep"
 
 deployment_name="grocery-amg-mcp-$(date -u +%Y%m%d%H%M%S)"
 
-log_step "Deploying Azure Managed Grafana MCP server (ca-mcp-amg)"
+log_step "Deploying Azure Managed Grafana MCP server (ca-mcp-amg, stdio pivot)"
 az deployment group create \
   --name "$deployment_name" \
   --resource-group "$rg_name" \
   --template-file "$template" \
   --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" \
+    ingressEnabled=false \
   --output none
 
-mcp_fqdn="$(az containerapp show -g "$rg_name" -n ca-mcp-amg --query properties.configuration.ingress.fqdn -o tsv)"
-if [[ -n "$mcp_fqdn" ]]; then
-  log_ok "AMG MCP SSE endpoint: https://${mcp_fqdn}/sse"
-else
-  log_ok "Deployed. (Unable to read MCP FQDN yet; check the container app 'ca-mcp-amg' in the portal.)"
-fi
+log_ok "Deployed. This is a stdio MCP server (no HTTP/SSE ingress)."
+log_info "To inspect the process/logs interactively:"
+log_info "  az containerapp exec -g $rg_name -n ca-mcp-amg --command sh"
 
 log_info "Auth note: this uses the Container App managed identity with the 'Grafana Viewer' Azure RBAC role on the Managed Grafana resource."

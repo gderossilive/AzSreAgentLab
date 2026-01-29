@@ -77,7 +77,7 @@ cd demos/GrocerySreDemo
 ### Deploy Grafana MCP server (optional)
 
 If your Azure Managed Grafana has service account tokens disabled, use the MI-based Azure Managed Grafana MCP.
-This deploys a `ca-mcp-amg` Container App that exposes an SSE endpoint at `/sse`.
+This deploys a `ca-mcp-amg` Container App as a **stdio MCP server** (no HTTP/SSE ingress). This avoids Container Apps health checks on port 8000 given the current `amg-mcp` binary behavior.
 
 ```bash
 cd demos/GrocerySreDemo
