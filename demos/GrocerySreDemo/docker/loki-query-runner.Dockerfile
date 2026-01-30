@@ -13,6 +13,6 @@ ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 COPY --from=amg /usr/local/bin/amg-mcp /usr/local/bin/amg-mcp
 
 WORKDIR /app
-COPY demos/GrocerySreDemo/infrastructure/mcp_query_runner.py /app/mcp_query_runner.py
+COPY demos/GrocerySreDemo/infrastructure/amg_mcp_stdio_loki_query.py /app/amg_mcp_stdio_loki_query.py
 
-ENTRYPOINT ["python3", "/app/mcp_query_runner.py"]
+ENTRYPOINT ["python3", "/app/amg_mcp_stdio_loki_query.py"]

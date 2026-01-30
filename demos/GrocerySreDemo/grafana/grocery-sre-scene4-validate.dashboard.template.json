@@ -1,0 +1,192 @@
+{
+  "dashboard": {
+    "title": "Grocery App - Scene 4 (Validate in Grafana)",
+    "tags": ["grocery-sre-demo", "custom", "scene-4"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 0,
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "type": "custom",
+          "name": "app",
+          "label": "App",
+          "query": "grocery-api",
+          "current": { "text": "grocery-api", "value": "grocery-api", "selected": true },
+          "hide": 0
+        }
+      ]
+    },
+    "panels": [
+      {
+        "type": "text",
+        "title": "Scene 4 — Validate with Grafana",
+        "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+        "options": {
+          "mode": "markdown",
+          "content": "This dashboard supports the Grocery SRE storyboard Scene 4 (Validate with Grafana).\n\nIt expects a Loki datasource named **Loki (grocery)** and focuses on the inventory lookup scenario. If you haven't deployed Loki + the datasource yet, run: `demos/GrocerySreDemo/scripts/04-deploy-loki.sh` then `demos/GrocerySreDemo/scripts/07-create-custom-grafana-dashboard.sh`.\n\nWhat to watch after triggering the scenario:\n- Inventory failures spike (supplier throttling → 503s on inventory)\n- Failure % increases during the trigger window\n- Supplier rate-limit signals (errorCode `SUPPLIER_RATE_LIMIT_429`, retryAfter)\n\nIf you see **No data** in the inventory panels, generate inventory traffic by running: `demos/GrocerySreDemo/scripts/03-smoke-and-trigger.sh` or using the web UI’s **Check Inventory** / **Check All Inventory**."
+        }
+      },
+      {
+        "type": "timeseries",
+        "title": "Inventory requests (events/s)",
+        "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(({app=\"$app\"} | json | event=~\"inventory_check_(success|failed|error)|batch_inventory_check_started|batch_inventory_rate_limited|batch_inventory_partial_failure|batch_inventory_complete\")[$__interval]))"
+          }
+        ],
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+        "fieldConfig": { "defaults": {}, "overrides": [] }
+      },
+      {
+        "type": "timeseries",
+        "title": "Inventory failures (events/s)",
+        "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(({app=\"$app\"} | json | event=~\"inventory_check_(failed|error)|batch_inventory_rate_limited|batch_inventory_partial_failure\")[$__interval]))"
+          }
+        ],
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+        "fieldConfig": { "defaults": {}, "overrides": [] }
+      },
+      {
+        "type": "timeseries",
+        "title": "Inventory failure %",
+        "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "100 * (sum(rate(({app=\"$app\"} | json | event=~\"inventory_check_(failed|error)|batch_inventory_rate_limited|batch_inventory_partial_failure\")[$__interval])) / clamp_min(sum(rate(({app=\"$app\"} | json | event=~\"inventory_check_(success|failed|error)|batch_inventory_check_started|batch_inventory_rate_limited|batch_inventory_partial_failure|batch_inventory_complete\")[$__interval])), 0.000001))"
+          }
+        ],
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          },
+          "overrides": []
+        }
+      },
+      {
+        "type": "timeseries",
+        "title": "Supplier rate-limit errors (events/s)",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(({app=\"$app\"} | json | event=\"supplier_rate_limit_exceeded\")[$__interval]))"
+          }
+        ],
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+        "fieldConfig": { "defaults": {}, "overrides": [] }
+      },
+      {
+        "type": "stat",
+        "title": "Rate-limit errors (last 15m)",
+        "gridPos": { "h": 8, "w": 6, "x": 12, "y": 13 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(count_over_time({app=\"$app\"} | json | event=\"supplier_rate_limit_exceeded\" [15m]))"
+          }
+        ],
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+          "orientation": "horizontal",
+          "textMode": "auto",
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "orange", "value": 1 },
+                { "color": "red", "value": 10 }
+              ]
+            }
+          },
+          "overrides": []
+        }
+      },
+      {
+        "type": "timeseries",
+        "title": "Supplier retryAfter (seconds) — p50/p95",
+        "gridPos": { "h": 8, "w": 6, "x": 18, "y": 13 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "quantile(0.5, avg_over_time(({app=\"$app\"} | json | event=\"supplier_rate_limit_exceeded\" | unwrap retryAfter [5m])))",
+            "legendFormat": "p50"
+          },
+          {
+            "refId": "B",
+            "expr": "quantile(0.95, avg_over_time(({app=\"$app\"} | json | event=\"supplier_rate_limit_exceeded\" | unwrap retryAfter [5m])))",
+            "legendFormat": "p95"
+          }
+        ],
+        "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+        "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+      },
+      {
+        "type": "table",
+        "title": "Top rate-limited products (count)",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "topk(10, sum by (productId) (count_over_time({app=\"$app\"} | json | event=\"supplier_rate_limit_exceeded\" [15m])))"
+          }
+        ],
+        "options": {
+          "showHeader": true,
+          "sortBy": [{ "displayName": "Value", "desc": true }]
+        },
+        "fieldConfig": { "defaults": {}, "overrides": [] }
+      },
+      {
+        "type": "logs",
+        "title": "Recent inventory failures (formatted)",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "{app=\"$app\"} | json | event=~\"inventory_check_failed|inventory_check_error\" | line_format \"{{.event}} product={{.productId}} code={{.errorCode}} retryAfter={{.retryAfter}} reason={{.reason}}\""
+          }
+        ],
+        "options": {
+          "showTime": true,
+          "showLabels": false,
+          "showCommonLabels": false,
+          "wrapLogMessage": true,
+          "prettifyLogMessage": false,
+          "enableLogDetails": true
+        }
+      }
+    ]
+  },
+  "overwrite": true,
+  "message": "Create/update Grocery SRE Scene 4 dashboard"
+}

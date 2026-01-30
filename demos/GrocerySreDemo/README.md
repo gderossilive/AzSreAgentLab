@@ -78,9 +78,29 @@ Use this section as the presenter script. It assumes the environment is already 
 ### Scene 4 — Validate with Grafana
 
 - Use Managed Grafana to confirm the story:
-  - API 5xx spike (or error rate) aligned with inventory lookups
-  - Latency changes on the inventory endpoint path
-  - Any downstream/dependency failure indicators available in your dashboards
+  - Inventory failures spike (supplier throttling -> `503` on inventory)
+  - Failure % increases during the trigger window
+  - Downstream rate-limit indicators: `SUPPLIER_RATE_LIMIT_429` + `retryAfter`
+
+Optional: create an Azure Monitor alert to “intercept” supplier rate limiting (logs-based).
+This watches the Grocery API Container App logs in Log Analytics for `SUPPLIER_RATE_LIMIT_429`.
+
+```bash
+cd demos/GrocerySreDemo
+
+# Option A: create a new Action Group with an email receiver
+./scripts/06-deploy-supplier-429-alert.sh --email you@example.com
+
+# Option B: reuse an existing Action Group
+./scripts/06-deploy-supplier-429-alert.sh --action-group-id "/subscriptions/<sub>/resourceGroups/<rg>/providers/microsoft.insights/actionGroups/<name>"
+```
+
+Tip: if Loki is deployed, create the Scene 4 custom dashboard and use it as your “single pane of glass”:
+
+```bash
+cd demos/GrocerySreDemo
+./scripts/07-create-custom-grafana-dashboard.sh --dashboard scene4
+```
 
 ### Scene 5 (optional) — Deep log forensics with Loki
 
@@ -151,6 +171,9 @@ This creates a Loki datasource in your Managed Grafana instance (pointing at `ca
 ```bash
 cd demos/GrocerySreDemo
 ./scripts/07-create-custom-grafana-dashboard.sh
+
+# Or: create the storyboard Scene 4 dashboard (inventory failure validation)
+./scripts/07-create-custom-grafana-dashboard.sh --dashboard scene4
 ```
 
 If Loki is not deployed yet, run `./scripts/04-deploy-loki.sh` first.
@@ -166,6 +189,45 @@ If you see a `ca-mcp-amg-debug` app, it is a troubleshooting variant used during
 cd demos/GrocerySreDemo
 ./scripts/05-deploy-grafana-mcp.sh
 ```
+
+### Deploy Grafana MCP server (Managed Identity + HTTP, connectable from MCP clients)
+
+If you need both:
+
+- **Managed Identity auth** to Azure Managed Grafana (no service account token)
+- A **network-reachable** MCP endpoint for an external MCP client
+
+Deploy the MI-based HTTP proxy MCP server:
+
+```bash
+cd demos/GrocerySreDemo
+./scripts/05-deploy-grafana-mcp-amg-http.sh
+```
+
+This deploys `ca-mcp-amg-proxy` and prints the MCP endpoint:
+
+- `https://<fqdn>/mcp`
+- Transport: `streamable-http`
+
+### Deploy Grafana MCP server (HTTP/streamable, connectable from MCP clients)
+
+If you need an MCP endpoint that an MCP client can connect to over the network, deploy the **HTTP/streamable** MCP server.
+
+Prereq: create a Grafana **service account token** in Azure Managed Grafana.
+
+```bash
+cd demos/GrocerySreDemo
+
+# Do not commit this token. Prefer setting it only in your current shell.
+export GRAFANA_SERVICE_ACCOUNT_TOKEN="glsa_..."
+
+./scripts/05-deploy-grafana-mcp-http.sh
+```
+
+This deploys `ca-mcp-grafana` with external ingress and prints the MCP endpoint:
+
+- `https://<fqdn>/mcp`
+- Transport: `streamable-http`
 
 ## Files
 

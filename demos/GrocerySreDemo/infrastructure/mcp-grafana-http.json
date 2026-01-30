@@ -1,0 +1,99 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.40.2.10011",
+      "templateHash": "2502263431294505870"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "environmentId": {
+      "type": "string"
+    },
+    "grafanaUrl": {
+      "type": "string"
+    },
+    "grafanaToken": {
+      "type": "securestring"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "ca-mcp-grafana",
+      "location": "[parameters('location')]",
+      "properties": {
+        "managedEnvironmentId": "[parameters('environmentId')]",
+        "configuration": {
+          "ingress": {
+            "external": true,
+            "targetPort": 8000,
+            "transport": "http",
+            "corsPolicy": {
+              "allowedOrigins": [
+                "*"
+              ],
+              "allowedMethods": [
+                "GET",
+                "POST",
+                "OPTIONS"
+              ],
+              "allowedHeaders": [
+                "*"
+              ]
+            }
+          },
+          "secrets": [
+            {
+              "name": "grafana-token",
+              "value": "[parameters('grafanaToken')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "mcp-grafana",
+              "image": "grafana/mcp-grafana:latest",
+              "args": [
+                "-t",
+                "streamable-http"
+              ],
+              "env": [
+                {
+                  "name": "GRAFANA_URL",
+                  "value": "[parameters('grafanaUrl')]"
+                },
+                {
+                  "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN",
+                  "secretRef": "grafana-token"
+                }
+              ],
+              "resources": {
+                "cpu": "[json('0.25')]",
+                "memory": "0.5Gi"
+              }
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "mcpServerUrl": {
+      "type": "string",
+      "value": "[format('https://{0}/mcp', reference(resourceId('Microsoft.App/containerApps', 'ca-mcp-grafana'), '2023-05-01').configuration.ingress.fqdn)]"
+    }
+  }
+}

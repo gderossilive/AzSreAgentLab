@@ -1,0 +1,152 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.40.2.10011",
+      "templateHash": "7047910299406740798"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "environmentId": {
+      "type": "string"
+    },
+    "acrName": {
+      "type": "string"
+    },
+    "grafanaName": {
+      "type": "string"
+    },
+    "grafanaEndpoint": {
+      "type": "string"
+    },
+    "appName": {
+      "type": "string",
+      "defaultValue": "ca-mcp-amg-proxy",
+      "metadata": {
+        "description": "Name of the Container App to deploy (you can change this to run multiple variants)."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "uami-mcp-amg",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[parameters('appName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg'))]": {}
+        }
+      },
+      "properties": {
+        "managedEnvironmentId": "[parameters('environmentId')]",
+        "configuration": {
+          "registries": [
+            {
+              "server": "[format('{0}.azurecr.io', parameters('acrName'))]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg')]"
+            }
+          ],
+          "ingress": {
+            "external": true,
+            "targetPort": 8000,
+            "transport": "http",
+            "corsPolicy": {
+              "allowedOrigins": [
+                "*"
+              ],
+              "allowedMethods": [
+                "GET",
+                "POST",
+                "OPTIONS"
+              ],
+              "allowedHeaders": [
+                "*"
+              ]
+            }
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "amg-mcp-proxy",
+              "image": "[format('{0}.azurecr.io/amg-mcp-http-proxy:latest', parameters('acrName'))]",
+              "env": [
+                {
+                  "name": "GRAFANA_ENDPOINT",
+                  "value": "[parameters('grafanaEndpoint')]"
+                },
+                {
+                  "name": "AZURE_CLIENT_ID",
+                  "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg'), '2023-01-31').clientId]"
+                }
+              ],
+              "resources": {
+                "cpu": "[json('0.25')]",
+                "memory": "0.5Gi"
+              }
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]",
+      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg'), 'acrpull')]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg'), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Dashboard/grafana', parameters('grafanaName'))]",
+      "name": "[guid(resourceId('Microsoft.Dashboard/grafana', parameters('grafanaName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg'), 'grafanaviewer')]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg'), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '60921a7e-fef1-4a43-9b16-a26c52ad4769')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "mcpUrl": {
+      "type": "string",
+      "value": "[format('https://{0}/mcp', reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2023-05-01').configuration.ingress.fqdn)]"
+    },
+    "principalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'uami-mcp-amg'), '2023-01-31').principalId]"
+    }
+  }
+}
