@@ -1,0 +1,157 @@
+{
+  "dashboard": {
+    "title": "Grocery App - SRE Overview (Custom)",
+    "tags": ["grocery-sre-demo", "custom"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 0,
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "type": "custom",
+          "name": "app",
+          "label": "App",
+          "query": "grocery-api",
+          "current": { "text": "grocery-api", "value": "grocery-api", "selected": true },
+          "hide": 0
+        }
+      ]
+    },
+    "panels": [
+      {
+        "type": "text",
+        "title": "About",
+        "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+        "options": {
+          "mode": "markdown",
+          "content": "This is a custom dashboard for the AzSreAgentLab Grocery SRE Demo.\n\nIt expects a Loki datasource named **Loki (grocery)**. If you haven't set it up yet, run: `demos/GrocerySreDemo/scripts/07-create-custom-grafana-dashboard.sh`.\n\nTip: trigger the rate limit scenario via `scripts/03-smoke-and-trigger.sh` and watch error spikes and `429`s here."
+        }
+      },
+      {
+        "type": "stat",
+        "title": "Errors (last 15m)",
+        "gridPos": { "h": 5, "w": 6, "x": 0, "y": 4 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(count_over_time({app=\"$app\", level=\"error\"}[15m]))"
+          }
+        ],
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+          "orientation": "horizontal",
+          "textMode": "auto",
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "orange", "value": 1 },
+                { "color": "red", "value": 10 }
+              ]
+            }
+          },
+          "overrides": []
+        }
+      },
+      {
+        "type": "timeseries",
+        "title": "Error rate (errors/s)",
+        "gridPos": { "h": 9, "w": 18, "x": 6, "y": 4 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate({app=\"$app\", level=\"error\"}[$__interval]))"
+          }
+        ],
+        "options": {
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": { "defaults": {}, "overrides": [] }
+      },
+      {
+        "type": "timeseries",
+        "title": "Rate limit events (429s)",
+        "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(count_over_time({app=\"$app\"} |= \"429\" [$__interval]))"
+          }
+        ],
+        "options": {
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": { "defaults": {}, "overrides": [] }
+      },
+      {
+        "type": "timeseries",
+        "title": "Warnings + errors (events/s)",
+        "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate({app=\"$app\", level=~\"warn|error\"}[$__interval]))"
+          }
+        ],
+        "options": {
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": { "defaults": {}, "overrides": [] }
+      },
+      {
+        "type": "table",
+        "title": "Errors by errorCode (count)",
+        "gridPos": { "h": 9, "w": 12, "x": 0, "y": 18 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (errorCode) (count_over_time({app=\"$app\"} | json | errorCode!=\"\" [$__interval]))"
+          }
+        ],
+        "options": {
+          "showHeader": true,
+          "sortBy": [{ "displayName": "Value", "desc": true }]
+        },
+        "fieldConfig": { "defaults": {}, "overrides": [] }
+      },
+      {
+        "type": "logs",
+        "title": "Recent errors (formatted)",
+        "gridPos": { "h": 9, "w": 12, "x": 12, "y": 18 },
+        "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "{app=\"$app\", level=\"error\"} | json | line_format \"{{.statusCode}} {{.errorCode}} {{.event}} - {{.message}}\""
+          }
+        ],
+        "options": {
+          "showTime": true,
+          "showLabels": false,
+          "showCommonLabels": false,
+          "wrapLogMessage": true,
+          "prettifyLogMessage": false,
+          "enableLogDetails": true
+        }
+      }
+    ]
+  },
+  "overwrite": true,
+  "message": "Create/update Grocery SRE custom dashboard"
+}
