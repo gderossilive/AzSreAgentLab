@@ -66,7 +66,7 @@ az deployment group create \
   --name "$deployment_name" \
   --resource-group "$rg_name" \
   --template-file "$template" \
-  --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" \
+  --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" deploymentStamp="$deployment_name" \
   --query "properties.outputs" -o json
 
 fqdn="$(az containerapp show -g "$rg_name" -n ca-mcp-amg-proxy --query properties.configuration.ingress.fqdn -o tsv)"

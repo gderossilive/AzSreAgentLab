@@ -209,6 +209,19 @@ This deploys `ca-mcp-amg-proxy` and prints the MCP endpoint:
 - `https://<fqdn>/mcp`
 - Transport: `streamable-http`
 
+Current lab endpoint:
+
+- https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp
+- Health: https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/healthz
+
+#### Azure SRE Agent connector settings (portal)
+
+- **Connection type**: Streamable HTTP
+- **URL**: use the full `/mcp` URL above
+- **Auth**: none at the connector (Grafana auth is done server-side via managed identity)
+
+If the portal validator probes `GET /mcp` or `DELETE /mcp` without a session id, the proxy returns `200` to avoid hard failures.
+
 ### Deploy Grafana MCP server (HTTP/streamable, connectable from MCP clients)
 
 If you need an MCP endpoint that an MCP client can connect to over the network, deploy the **HTTP/streamable** MCP server.

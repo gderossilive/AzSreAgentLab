@@ -45,6 +45,41 @@ This deploys `ca-mcp-amg-proxy` and prints:
 
 - `https://<fqdn>/mcp` (transport: `streamable-http`)
 
+### Current lab endpoint (MI-based HTTP MCP proxy)
+
+- MCP endpoint: https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp
+- Probes:
+  - https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/
+  - https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/healthz
+
+This endpoint authenticates to Azure Managed Grafana using managed identity (Grafana Viewer RBAC on the Grafana resource).
+
+### Notes for MCP clients / connector validators
+
+The proxy is intentionally tolerant of “validator-style” traffic:
+
+- `GET /mcp` without `mcp-session-id` returns `200` (SSE `: ok`) to avoid hard failures during validation.
+- `DELETE /mcp` without `mcp-session-id` returns `200` (JSON `null`) for best-effort teardown.
+
+For a normal MCP flow, clients should:
+
+1) `POST /mcp` `initialize` (JSON)
+2) `GET /mcp` with `Accept: text/event-stream` (SSE stream)
+
+Minimal smoke test:
+
+```bash
+curl -sS -i -X POST \
+  https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+
+curl -sS -i -N \
+  -H 'accept: text/event-stream' \
+  https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp --max-time 2
+```
+
 ## Resource organization
 
 - **Resource group**: `rg-grocery-sre-demo`

@@ -5,6 +5,8 @@ param grafanaName string
 param grafanaEndpoint string
 @description('Name of the Container App to deploy (you can change this to run multiple variants).')
 param appName string = 'ca-mcp-amg-proxy'
+@description('Unique value to force a new Container Apps revision (for example, a deployment timestamp).')
+param deploymentStamp string = utcNow('yyyyMMddHHmmss')
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
   name: acrName
@@ -70,6 +72,10 @@ resource mcpAmgProxyApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'AZURE_CLIENT_ID'
               value: mcpAmgIdentity.properties.clientId
+            }
+            {
+              name: 'DEPLOYMENT_STAMP'
+              value: deploymentStamp
             }
           ]
           resources: {
