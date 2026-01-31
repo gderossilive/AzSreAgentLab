@@ -209,10 +209,11 @@ This deploys `ca-mcp-amg-proxy` and prints the MCP endpoint:
 - `https://<fqdn>/mcp`
 - Transport: `streamable-http`
 
-Current lab endpoint:
+To resolve the current endpoint later:
 
-- https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp
-- Health: https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/healthz
+```bash
+az containerapp show -g rg-grocery-sre-demo -n ca-mcp-amg-proxy --query properties.configuration.ingress.fqdn -o tsv
+```
 
 #### Tool surface (MI HTTP proxy)
 
@@ -235,6 +236,17 @@ It does NOT expose dashboard download/upload or system backup/restore tools.
 - **Auth**: none at the connector (Grafana auth is done server-side via managed identity)
 
 If the portal validator probes `GET /mcp` or `DELETE /mcp` without a session id, the proxy returns `200` to avoid hard failures.
+
+#### End-to-end validation (recommended)
+
+After deployment (or after RBAC changes), run the E2E tool test:
+
+```bash
+cd demos/GrocerySreDemo
+./scripts/08-test-grafana-mcp-tools.sh --mcp-url https://<fqdn>/mcp
+```
+
+This test initializes an MCP session, lists tools, and calls each tool with safe arguments (including `amgmcp_image_render` against the configured dashboard UID).
 
 ### Deploy Grafana MCP server (HTTP/streamable, connectable from MCP clients)
 

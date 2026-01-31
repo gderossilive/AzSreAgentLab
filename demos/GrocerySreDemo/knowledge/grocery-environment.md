@@ -4,18 +4,10 @@ This environment hosts a small “Grocery” sample app running on Azure Contain
 
 ## Deployed components
 
-- **Container Apps Environment**: `cae-pu3vvmgkrke3q`
-- **Grocery API (Container App)**: `ca-api-pu3vvmgkrke3q`
-  - URL: https://ca-api-pu3vvmgkrke3q.mangoplant-51da0571.swedencentral.azurecontainerapps.io
-- **Grocery Web (Container App)**: `ca-web-pu3vvmgkrke3q`
-  - URL: https://ca-web-pu3vvmgkrke3q.mangoplant-51da0571.swedencentral.azurecontainerapps.io
-- **Loki (Container App)**: `ca-loki`
-  - URL: https://ca-loki.mangoplant-51da0571.swedencentral.azurecontainerapps.io
-  - Used for LogQL investigations (see `loki-queries.md`).
-- **Managed Grafana**: `amg-pu3vvmgkrke3q`
-  - Endpoint: https://amg-pu3vvmgkrke3q-bnenf9hdb0erh5e4.cse.grafana.azure.com
-- **Azure SRE Agent**: `sre-agent-grocery-demo`
-  - Endpoint: https://sre-agent-grocery-demo--4e739d60.6d6a35f1.swedencentral.azuresre.ai
+The concrete resource names and URLs can vary by deployment. Prefer using:
+
+- `demos/GrocerySreDemo/demo-config.json` (app names + URLs)
+- `az containerapp list/show` for current ingress FQDNs
 
 ## Optional: Grafana MCP (connectable from MCP clients)
 
@@ -45,14 +37,14 @@ This deploys `ca-mcp-amg-proxy` and prints:
 
 - `https://<fqdn>/mcp` (transport: `streamable-http`)
 
-### Current lab endpoint (MI-based HTTP MCP proxy)
+To resolve the current MCP endpoint at any time:
 
-- MCP endpoint: https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp
-- Probes:
-  - https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/
-  - https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/healthz
+```bash
+fqdn=$(az containerapp show -g rg-grocery-sre-demo -n ca-mcp-amg-proxy --query properties.configuration.ingress.fqdn -o tsv)
+echo "https://$fqdn/mcp"
+```
 
-This endpoint authenticates to Azure Managed Grafana using managed identity (Grafana Viewer RBAC on the Grafana resource).
+This endpoint authenticates to Azure Managed Grafana using managed identity (Grafana Viewer/Editor RBAC on the Grafana resource).
 
 ### Notes for MCP clients / connector validators
 
@@ -61,23 +53,17 @@ The proxy is intentionally tolerant of “validator-style” traffic:
 - `GET /mcp` without `mcp-session-id` returns `200` (SSE `: ok`) to avoid hard failures during validation.
 - `DELETE /mcp` without `mcp-session-id` returns `200` (JSON `null`) for best-effort teardown.
 
-For a normal MCP flow, clients should:
+For normal MCP usage, clients should use `POST /mcp` with JSON-RPC payloads (Streamable HTTP).
 
-1) `POST /mcp` `initialize` (JSON)
-2) `GET /mcp` with `Accept: text/event-stream` (SSE stream)
-
-Minimal smoke test:
+Minimal smoke test (JSON-only):
 
 ```bash
-curl -sS -i -X POST \
-  https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp \
+MCP_URL="https://<fqdn>/mcp"
+
+curl -sS -i -X POST "$MCP_URL" \
   -H 'content-type: application/json' \
   -H 'accept: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
-
-curl -sS -i -N \
-  -H 'accept: text/event-stream' \
-  https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp --max-time 2
 ```
 
 ## Resource organization
