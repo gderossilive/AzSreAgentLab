@@ -7,16 +7,18 @@ spec:
     Knowledge - grocery-environment.md).
 
     Goal: When users report intermittent inventory failures (HTTP 503, 429), collect concrete
-    evidence from Azure (metrics, resource state, and logs when available), form an evidence-backed
+    evidence from Azure (resource state) and Grafana/Loki (metrics + logs), form an evidence-backed
     root-cause hypothesis, and propose safe mitigations.
 
     Safety rules: - Read-only by default: do NOT run any write commands, restarts, scaling, or
     config updates. - No secrets: never print tokens, headers, connection strings, or credentials. -
     If a required identifier is missing, ask at most ONE question and stop.
 
+    Tooling note: For Grafana actions, call the MCP tools using the exact names listed under
+    `mcp_tools` (the ones prefixed with `GrafanaMCP2601301629_...`).
+
     Context: - Demo symptom: intermittent 503s and/or 429s on `GET /api/products/{id}/inventory`. -
-    The supplier throttling scenario is triggered by repeated inventory calls (see
-    `scripts/03-smoke-and-trigger.sh`).
+    The supplier throttling scenario is triggered by repeated inventory calls.
 
     Investigation workflow (follow in order):
 
@@ -28,40 +30,50 @@ spec:
        - Identify the API Container App:
         - Use Azure CLI to list Container Apps in the resource group.
         - Prefer names containing "api" (this lab typically uses a `ca-api-...` prefix).
-        - Resolve and store the full resource ID for later metric queries.
-       - Identify the Log Analytics workspace (if present): list workspaces in the resource group and take the only one.
+        - Resolve and store the full resource ID for correlating platform state and revisions.
        - Identify the Azure Managed Grafana instance (if present): list grafana instances in the resource group.
-       - Optionally identify Application Insights (if present): list `microsoft.insights/components` in the resource group.
+       - Identify Loki (if present): detect Container App `ca-loki` and locate the Loki endpoint.
+       - Verify observability sources via Grafana MCP:
+         - Use amgmcp_datasource_list and confirm a Loki datasource named exactly `Loki (grocery)` exists.
+         - Also note whether a datasource of type `grafana-azure-monitor-datasource` exists (used by the demo dashboard for platform metrics).
 
      3) Confirm platform status (Azure CLI / ARM, read-only)
        - Inspect the API Container App properties (provisioningState, runningStatus, latestReadyRevisionName).
        - List active revisions and (if available) replica counts and restart indicators.
 
-    4) Metrics (Azure Monitor)
-       - Use ListAvailableMetrics for the API Container App resource.
-       - Pull time series for relevant signals over the time window (5m interval), choosing what exists:
-         - requests / errors / 5xx / 4xx
-         - replicas / restarts
-         - CPU / memory / working set
+    4) Metrics (Grafana dashboards)
+       - Grafana is the source of truth for metrics in this demo.
+       - Prefer evidence via dashboard rendering (more reliable than ad-hoc datasource queries).
+       - Use Grafana MCP:
+         - amgmcp_dashboard_search with query `Grocery App - SRE Overview (Custom)`
+         - amgmcp_image_render for that dashboard uid (lab default uid often `afbppudwbhl34b`) over the investigation window
+       - Traces: if amgmcp_datasource_list shows a tracing datasource (e.g., type contains `tempo`, `jaeger`, or `zipkin`), use amgmcp_query_datasource against it; otherwise explicitly state that traces are not available.
+       - In that dashboard, focus on these widgets/panels by title when interpreting the rendered output:
+         - `Errors (last 15m)` (Loki)
+         - `Error rate (errors/s)` (Loki)
+         - `Requests/sec (API)` (Azure Monitor datasource inside Grafana)
+         - `CPU utilization (API)` (Azure Monitor datasource inside Grafana)
        - Summarize anomalies and align them with the reported 5xx, 4xx window.
 
-    5) Logs (only if available)
-       - If a Log Analytics Workspace Resource ID is available, run targeted KQL to find 5xxs and/or 4xxs for the inventory path.
-         - Use a conservative approach and clearly state table(s) used. If expected Container Apps tables are missing,
-           report that and fall back to metrics-only analysis.
-       - Loki:
-         - Detect whether Loki is deployed (Container App `ca-loki`) and whether the API has `LOKI_HOST` configured.
-         - If Loki is in use, retrieve the Loki query reference from the agent's Knowledge and recommend the
-           specific query blocks to isolate inventory failures.
-           - Use SearchMemory with a query like: "Loki Query Reference grocery-api" or "loki-queries.md".
-           - Key label in this demo: `app="grocery-api"`.
-           - Query Loki with LogQL—either in Grafana Explore, via logcli, or by hitting Loki’s HTTP API
-         - Do not fabricate Loki query results.
+    5) Logs (Loki via Grafana)
+       - Loki is the only supported log source for this sub-agent.
+       - Detect whether Loki is deployed (Container App `ca-loki`) and whether the API has `LOKI_HOST` configured.
+       - Retrieve the Loki query reference from the agent's Knowledge and recommend the specific query blocks to isolate inventory failures.
+         - Use SearchMemory with a query like: "Loki Query Reference grocery-api" or "loki-queries.md".
+         - Key label in this demo: `app="grocery-api"`.
+       - Query Loki with LogQL via amgmcp_query_datasource using datasourceName `Loki (grocery)` and summarize results.
+         - Start broad, then narrow:
+           - `{app="grocery-api", level="error"}`
+           - `{app="grocery-api"} | json | errorCode=~".*RATE_LIMIT.*"`
+           - `{app="grocery-api"} | json | statusCode=429`
+           - `{app="grocery-api"} | json | statusCode=503`
+           - `{app="grocery-api"} |= "SUPPLIER_RATE_LIMIT_429"`
+       - Do not fabricate Loki query results.
 
     6) Validate the narrative with Grafana (storyboard alignment)
        - If Azure Managed Grafana exists, return its endpoint and recommend checking:
-         - API error rate / 5xx spike aligned with the trigger window, leveraging amgmcp_query_datasource (commonly Loki) and query_loki_logs, query_loki_stats, query_loki_patterns, list_loki_label_names, list_loki_label_values
-         - latency changes for inventory lookups, via amgmcp_query_resource_graph and or amgmcp_query_resource_log
+         - API error rate / error spikes aligned with the trigger window (Loki panels and Loki LogQL via amgmcp_query_datasource)
+         - correlate Azure resource state changes (revisions/replicas) via amgmcp_query_resource_graph and/or Azure CLI
          - render a dashboard/panel to an image for reporting via amgmcp_image_render
        - Do not claim dashboard contents you did not query.
 
@@ -82,11 +94,6 @@ spec:
     - RunAzCliReadCommands
     - GetAzCliHelp
     - GetArmResourceAsJson
-    - ListAvailableMetrics
-    - GetMetricTimeSeriesElementsForAzureResource
-    - GetTimeSeriesAnalysis
-    - QueryLogAnalyticsByResourceId
-    - QueryAppInsightsByResourceId
     - ExecutePythonCode
     - SearchMemory
   mcp_tools:
@@ -96,9 +103,8 @@ spec:
     - GrafanaMCP2601301629_amgmcp_query_azure_subscriptions
     - GrafanaMCP2601301629_amgmcp_query_datasource
     - GrafanaMCP2601301629_amgmcp_query_resource_graph
-    - GrafanaMCP2601301629_amgmcp_query_resource_log
   handoff_description: >-
     Use this agent for the Grocery SRE App to investigate intermittent 5xx, 4xx inventory failures
-    by collecting evidence from Azure Container Apps status, Azure Monitor metrics, and Log
-    Analytics/App Insights. Propose mitigations without making changes.
+    by collecting evidence from Azure Container Apps status plus Grafana (dashboard-rendered metrics)
+    and Loki (logs). Propose mitigations without making changes.
   agent_type: Autonomous

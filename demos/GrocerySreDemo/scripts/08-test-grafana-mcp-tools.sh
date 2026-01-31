@@ -379,7 +379,9 @@ for tool_name in sorted(by_name.keys()):
         # Small, safe query and tight window.
         end_ms = _now_ms()
         start_ms = end_ms - 15 * 60 * 1000
-        args['query'] = '{job=~".+"} |~ ".*"'
+        # Use the demo's canonical app label and a query that should be valid
+        # even when there are no recent errors.
+        args['query'] = '{app="grocery-api"} | json'
         args['limit'] = 5
         args['fromMs'] = start_ms
         args['toMs'] = end_ms
