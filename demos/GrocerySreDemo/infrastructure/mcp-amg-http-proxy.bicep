@@ -3,6 +3,8 @@ param environmentId string
 param acrName string
 param grafanaName string
 param grafanaEndpoint string
+@description('Optional Loki base URL for direct query fallback (e.g., https://ca-loki.<stamp>.<region>.azurecontainerapps.io).')
+param lokiEndpoint string = ''
 @description('Name of the Container App to deploy (you can change this to run multiple variants).')
 param appName string = 'ca-mcp-amg-proxy'
 @description('ACR image tag for the amg-mcp-http-proxy container image.')
@@ -70,6 +72,10 @@ resource mcpAmgProxyApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'GRAFANA_ENDPOINT'
               value: grafanaEndpoint
+            }
+            {
+              name: 'LOKI_ENDPOINT'
+              value: lokiEndpoint
             }
             {
               name: 'AMG_MCP_TOOL_TIMEOUT_S'

@@ -92,7 +92,10 @@ class McpStdioClient:
         # Minimal LSP-style framing: headers until \r\n\r\n then JSON body.
         start = time.time()
         headers = b""
-        while b"\r\n\r\n" not in headers:
+        def _header_complete(data: bytes) -> bool:
+            return (b"\r\n\r\n" in data) or (b"\n\n" in data)
+
+        while not _header_complete(headers):
             if time.time() - start > timeout_s:
                 raise TimeoutError("Timed out waiting for MCP headers")
             chunk = self._stdout.read(1)
@@ -101,9 +104,13 @@ class McpStdioClient:
                 raise RuntimeError(f"MCP server stdout closed (returncode={rc})")
             headers += chunk
 
-        header_blob, rest = headers.split(b"\r\n\r\n", 1)
+        if b"\r\n\r\n" in headers:
+            header_blob, rest = headers.split(b"\r\n\r\n", 1)
+        else:
+            header_blob, rest = headers.split(b"\n\n", 1)
         content_length: Optional[int] = None
-        for line in header_blob.split(b"\r\n"):
+        normalized = header_blob.replace(b"\r\n", b"\n")
+        for line in normalized.split(b"\n"):
             if line.lower().startswith(b"content-length:"):
                 content_length = int(line.split(b":", 1)[1].strip())
                 break

@@ -91,11 +91,26 @@ class McpStdioClient:
         self._stdin.write(body)
         self._stdin.flush()
 
+    def notify(self, method: str, params: dict[str, Any]) -> None:
+        with self._lock:
+            self._send({"jsonrpc": "2.0", "method": method, "params": params})
+
     def _read_message(self, timeout_s: float = 30.0) -> dict[str, Any]:
         # Minimal LSP-style framing: headers until \r\n\r\n then JSON body.
         start = time.time()
         buf = self._recv_buf
-        while b"\r\n\r\n" not in buf:
+        def _find_header_end(data: bytes) -> tuple[int, int]:
+            # Prefer CRLF framing, but accept LF-only framing as well.
+            idx = data.find(b"\r\n\r\n")
+            if idx >= 0:
+                return idx, 4
+            idx = data.find(b"\n\n")
+            if idx >= 0:
+                return idx, 2
+            return -1, 0
+
+        header_end, sep_len = _find_header_end(buf)
+        while header_end < 0:
             remaining = timeout_s - (time.time() - start)
             if remaining <= 0:
                 raise TimeoutError("Timed out waiting for MCP headers")
@@ -110,9 +125,13 @@ class McpStdioClient:
                 raise RuntimeError(f"MCP server stdout closed (returncode={rc})")
             buf += chunk
 
-        header_blob, rest = buf.split(b"\r\n\r\n", 1)
+            header_end, sep_len = _find_header_end(buf)
+
+        header_blob = buf[:header_end]
+        rest = buf[header_end + sep_len :]
         content_length: Optional[int] = None
-        for line in header_blob.split(b"\r\n"):
+        normalized = header_blob.replace(b"\r\n", b"\n")
+        for line in normalized.split(b"\n"):
             if line.lower().startswith(b"content-length:"):
                 content_length = int(line.split(b":", 1)[1].strip())
                 break
@@ -195,17 +214,24 @@ class AmgMcpBackend:
         ]
         self._client = McpStdioClient(argv)
 
+        # Compatibility note: the amg-mcp CLI server may not accept newer MCP
+        # initialize params (protocolVersion/clientInfo) and can hang without
+        # emitting framed output. Keep this payload minimal.
         init = self._call(
             "initialize",
-            {
-                "protocolVersion": "2025-11-25",
-                "capabilities": {},
-                "clientInfo": {"name": "amg-mcp-http-proxy", "version": ""},
-            },
+            {"capabilities": {}},
             timeout_s=float(_env_int("AMG_MCP_INIT_TIMEOUT_S", 20)),
         )
         if init.is_error:
             raise RuntimeError(f"amg-mcp initialize failed: {init.raw.get('error')}")
+
+        # Some MCP/stdio servers expect an LSP-style initialized notification
+        # before they start answering tool calls.
+        try:
+            self._client.notify("initialized", {})
+            self._client.notify("notifications/initialized", {})
+        except Exception:
+            pass
 
         tools = self._call("tools/list", {}, timeout_s=float(_env_int("AMG_MCP_TOOLS_LIST_TIMEOUT_S", 30)))
         if tools.is_error:
@@ -255,6 +281,48 @@ def _grafana_aad_resource() -> str:
 
 def _grafana_http_timeout_s() -> float:
     return float(_env_int("GRAFANA_HTTP_TIMEOUT_S", 20))
+
+
+def _loki_http_timeout_s() -> float:
+    return float(_env_int("LOKI_HTTP_TIMEOUT_S", 15))
+
+
+def _loki_endpoint() -> str:
+    return _env_str("LOKI_ENDPOINT").rstrip("/")
+
+
+def _looks_like_loki_datasource(name: Optional[str]) -> bool:
+    if not name:
+        return False
+    return "loki" in name.strip().lower()
+
+
+def _loki_query_range(*, query: str, start_ms: int, end_ms: int, limit: Optional[int]) -> dict[str, Any]:
+    endpoint = _loki_endpoint()
+    if not endpoint:
+        raise RuntimeError("LOKI_ENDPOINT is not set")
+
+    # Loki expects nanoseconds since epoch.
+    params: dict[str, str] = {
+        "query": query,
+        "start": str(int(start_ms) * 1_000_000),
+        "end": str(int(end_ms) * 1_000_000),
+    }
+    if limit is not None:
+        params["limit"] = str(int(limit))
+
+    # Support either a bare base URL (https://host) or a base that already includes /loki.
+    base = endpoint
+    if base.endswith("/loki"):
+        url = base + "/api/v1/query_range"
+    else:
+        url = base + "/loki/api/v1/query_range"
+
+    url = url + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=_loki_http_timeout_s()) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    return payload
 
 
 def _get_managed_identity_access_token(resource: str) -> str:
@@ -680,10 +748,42 @@ async def amgmcp_datasource_list() -> dict[str, Any]:
     if cached is not None:
         return cached
 
+    # If Loki direct access is configured, prefer a fast minimal list.
+    if _loki_endpoint() and _env_bool("PREFER_LOKI_DIRECT_DATASOURCE_LIST", default=True):
+        out = {
+            "ok": True,
+            "source": "loki-direct",
+            "datasources": [
+                {
+                    "name": "Loki (grocery)",
+                    "type": "loki",
+                    "url": _loki_endpoint(),
+                }
+            ],
+        }
+        await asyncio.to_thread(_set_cached_datasource_list, out)
+        return out
+
     # Prefer the underlying amg-mcp tool.
     # The direct Grafana data-plane API call to /api/datasources can return 401
     # in some Managed Identity setups; relying on amg-mcp keeps behavior stable.
     out = await asyncio.to_thread(_backend_tool_call_safe, "amgmcp_datasource_list", {})
+
+    # Fallback: if the amg-mcp backend stalls and we have a Loki endpoint configured,
+    # return a minimal datasource list so callers can proceed.
+    if isinstance(out, dict) and out.get("ok") is False and out.get("errorType") == "TimeoutError":
+        if _loki_endpoint():
+            out = {
+                "ok": True,
+                "source": "loki-direct",
+                "datasources": [
+                    {
+                        "name": "Loki (grocery)",
+                        "type": "loki",
+                        "url": _loki_endpoint(),
+                    }
+                ],
+            }
     # Cache successful responses even if they came from the slower path.
     if isinstance(out, dict) and "error" not in out:
         await asyncio.to_thread(_set_cached_datasource_list, out)
@@ -696,13 +796,18 @@ async def amgmcp_query_datasource(
     datasourceUID: Optional[str] = None,
     datasource_uid: Optional[str] = None,
     datasourceName: Optional[str] = None,
+    datasourcename: Optional[str] = None,
     query: Optional[str] = None,
     expr: Optional[str] = None,
     limit: Optional[int] = None,
     fromMs: Optional[int] = None,
     toMs: Optional[int] = None,
+    fromms: Optional[int] = None,
+    toms: Optional[int] = None,
     startTime: Optional[int] = None,
     endTime: Optional[int] = None,
+    starttime: Optional[int] = None,
+    endtime: Optional[int] = None,
 ) -> dict[str, Any]:
     """Query a datasource (commonly Loki) via Azure Managed Grafana using managed identity.
 
@@ -717,8 +822,9 @@ async def amgmcp_query_datasource(
         args["datasourceUID"] = datasourceUID
     if datasource_uid is not None:
         args["datasource_uid"] = datasource_uid
-    if datasourceName is not None:
-        args["datasourceName"] = datasourceName
+    ds_name = datasourceName if datasourceName is not None else datasourcename
+    if ds_name is not None:
+        args["datasourceName"] = ds_name
 
     if query is not None:
         args["query"] = query
@@ -729,19 +835,51 @@ async def amgmcp_query_datasource(
         args["limit"] = limit
 
     # Time bounds; use whichever keys the backend supports.
-    if fromMs is not None:
-        args["from"] = fromMs
-        args["startTime"] = fromMs
-    if toMs is not None:
-        args["to"] = toMs
-        args["endTime"] = toMs
-    if startTime is not None:
-        args["startTime"] = startTime
-    if endTime is not None:
-        args["endTime"] = endTime
+    from_ms = fromMs if fromMs is not None else fromms
+    to_ms = toMs if toMs is not None else toms
+    start_time = startTime if startTime is not None else starttime
+    end_time = endTime if endTime is not None else endtime
 
-    backend = await asyncio.to_thread(_get_backend)
-    return await asyncio.to_thread(backend.tool_call, "amgmcp_query_datasource", args)
+    if from_ms is not None:
+        args["from"] = from_ms
+        args["startTime"] = from_ms
+    if to_ms is not None:
+        args["to"] = to_ms
+        args["endTime"] = to_ms
+    if start_time is not None:
+        args["startTime"] = start_time
+    if end_time is not None:
+        args["endTime"] = end_time
+
+    # Prefer Loki-direct if the datasource looks like Loki and a direct endpoint is configured.
+    if _looks_like_loki_datasource(ds_name) and _loki_endpoint():
+        effective_query = query if query is not None else expr
+        if not effective_query:
+            return {"ok": False, "source": "loki-direct", "errorType": "ValueError", "error": "query is required"}
+
+        start_ms = from_ms if from_ms is not None else start_time
+        end_ms = to_ms if to_ms is not None else end_time
+        if start_ms is None or end_ms is None:
+            return {
+                "ok": False,
+                "source": "loki-direct",
+                "errorType": "ValueError",
+                "error": "fromMs/toMs (or startTime/endTime) are required",
+            }
+
+        try:
+            payload = await asyncio.to_thread(
+                _loki_query_range,
+                query=str(effective_query),
+                start_ms=int(start_ms),
+                end_ms=int(end_ms),
+                limit=limit,
+            )
+            return {"ok": True, "source": "loki-direct", "result": payload}
+        except Exception as exc:
+            return {"ok": False, "source": "loki-direct", "errorType": type(exc).__name__, "error": str(exc)}
+
+    return await asyncio.to_thread(_backend_tool_call_safe, "amgmcp_query_datasource", args)
 
 
 @mcp.tool()

@@ -65,11 +65,22 @@ az acr build \
 deployment_name="grocery-amg-mcp-http-proxy-$(date -u +%Y%m%d%H%M%S)"
 
 log_step "Deploying MI-based HTTP MCP endpoint (ca-mcp-amg-proxy)"
+
+# Optional Loki direct query fallback: discover the Loki Container App FQDN if present.
+loki_endpoint=""
+if az containerapp show -g "$rg_name" -n ca-loki --query name -o tsv >/dev/null 2>&1; then
+  loki_fqdn="$(az containerapp show -g "$rg_name" -n ca-loki --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)"
+  if [[ -n "$loki_fqdn" ]]; then
+    loki_endpoint="https://$loki_fqdn"
+    log_info "Detected Loki endpoint: $loki_endpoint"
+  fi
+fi
+
 az deployment group create \
   --name "$deployment_name" \
   --resource-group "$rg_name" \
   --template-file "$template" \
-  --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" imageTag="$image_tag" deploymentStamp="$deployment_name" \
+  --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" lokiEndpoint="$loki_endpoint" imageTag="$image_tag" deploymentStamp="$deployment_name" \
   --query "properties.outputs" -o json
 
 fqdn="$(az containerapp show -g "$rg_name" -n ca-mcp-amg-proxy --query properties.configuration.ingress.fqdn -o tsv)"
