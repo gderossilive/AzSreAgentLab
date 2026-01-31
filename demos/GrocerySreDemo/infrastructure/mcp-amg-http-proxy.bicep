@@ -5,6 +5,8 @@ param grafanaName string
 param grafanaEndpoint string
 @description('Name of the Container App to deploy (you can change this to run multiple variants).')
 param appName string = 'ca-mcp-amg-proxy'
+@description('ACR image tag for the amg-mcp-http-proxy container image.')
+param imageTag string = 'latest'
 @description('Unique value to force a new Container Apps revision (for example, a deployment timestamp).')
 param deploymentStamp string = utcNow('yyyyMMddHHmmss')
 
@@ -63,11 +65,15 @@ resource mcpAmgProxyApp 'Microsoft.App/containerApps@2023-05-01' = {
       containers: [
         {
           name: 'amg-mcp-proxy'
-          image: '${acrName}.azurecr.io/amg-mcp-http-proxy:latest'
+          image: '${acrName}.azurecr.io/amg-mcp-http-proxy:${imageTag}'
           env: [
             {
               name: 'GRAFANA_ENDPOINT'
               value: grafanaEndpoint
+            }
+            {
+              name: 'AMG_MCP_TOOL_TIMEOUT_S'
+              value: '90'
             }
             {
               name: 'AZURE_CLIENT_ID'

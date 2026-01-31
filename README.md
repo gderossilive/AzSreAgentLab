@@ -30,6 +30,10 @@ This lab deploys:
    - Demo flow diagram: [demos/ProactiveReliabilityAppService/README.md#demo-flow-end-to-end](demos/ProactiveReliabilityAppService/README.md#demo-flow-end-to-end)
    - See [Proactive Reliability Demo](demos/ProactiveReliabilityAppService/README.md) for details
 
+4. **Grocery SRE Demo (Container Apps + Managed Grafana + MCP)** (`demos/GrocerySreDemo/`)
+   - Sample “grocery” app (API + web) with an optional Loki log pipeline and optional Grafana MCP integration
+   - Useful for demos that involve querying Grafana dashboards/logs via MCP (e.g., from agents)
+
 ### Demo → scripts map
 
 | Demo | Demo folder | Key config files | Related scripts (run order) |
@@ -202,6 +206,10 @@ Then follow the same happy-path deployment sequence above.
 │       ├── demo-config.json  # Output from setup script (safe to commit)
 │       ├── SubAgents/     # Portal YAML templates (placeholders)
 │       └── scripts/       # Setup/run/reset scripts
+│   └── GrocerySreDemo/
+│       ├── README.md      # Grocery SRE demo execution guide
+│       ├── infrastructure/ # Bicep templates for optional components (Loki, MCP)
+│       └── scripts/       # Deploy/test scripts
 └── external/
     ├── octopets/          # Octopets sample app
     └── sre-agent/         # SRE Agent reference repo
@@ -537,6 +545,38 @@ source scripts/load-env.sh
 # Delete resource groups
 az group delete -n rg-octopets-lab --yes --no-wait
 az group delete -n rg-sre-agent-lab --yes --no-wait
+```
+
+## 🍱 Grocery SRE Demo: Container Apps inventory + cleanup
+
+The Grocery SRE demo typically uses a dedicated resource group (commonly `rg-grocery-sre-demo`) and deploys several Azure Container Apps.
+
+**Keep (core app)**
+- `ca-api-*` (example: `ca-api-pu3vvmgkrke3q`) — Grocery API (externally reachable)
+- `ca-web-*` (example: `ca-web-pu3vvmgkrke3q`) — Grocery Web (externally reachable)
+
+**Keep (if you use Grafana MCP from outside Azure / from MCP clients)**
+- `ca-mcp-amg-proxy` — Managed Identity + Streamable HTTP MCP endpoint (externally reachable, path `/mcp`)
+
+**Optional (only if you still use Loki-backed dashboards/log queries)**
+- `ca-loki` — Loki service (externally reachable); deleting this breaks the Loki datasource + any Loki panels until redeployed
+
+**Safe to delete (optional / debug / one-off runners)**
+- `ca-mcp-amg` — stdio-only MCP “pivot” (no ingress); not required if you use `ca-mcp-amg-proxy`
+- `ca-mcp-amg-debug` — troubleshooting variant of `ca-mcp-amg`
+- `ca-amg-loki-q-*` — one-off Loki query runner apps created by the query script
+
+Delete examples:
+```bash
+# Remove stdio pivot + debug apps
+az containerapp delete -g rg-grocery-sre-demo -n ca-mcp-amg -y
+az containerapp delete -g rg-grocery-sre-demo -n ca-mcp-amg-debug -y
+
+# Remove an old one-shot Loki query runner (example name)
+az containerapp delete -g rg-grocery-sre-demo -n ca-amg-loki-q-260130095250 -y
+
+# OPTIONAL: remove Loki (only if you don't need Loki dashboards/log queries)
+az containerapp delete -g rg-grocery-sre-demo -n ca-loki -y
 ```
 
 ## 📝 Notes

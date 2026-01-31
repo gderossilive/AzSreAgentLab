@@ -51,9 +51,12 @@ environment_id="$(az containerapp env show -g "$rg_name" -n "$cae_name" --query 
 log_step "Remote build: amg-mcp-http-proxy image in ACR"
 az acr show -n "$acr_name" -g "$rg_name" >/dev/null
 
+image_tag="$(date -u +%Y%m%d%H%M%S)"
+log_info "Image tag: $image_tag"
+
 az acr build \
   --registry "$acr_name" \
-  --image amg-mcp-http-proxy:latest \
+  --image "amg-mcp-http-proxy:${image_tag}" \
   --file "$dockerfile_path" \
   --build-arg ACR_LOGIN_SERVER="${acr_name}.azurecr.io" \
   "$repo_root" \
@@ -66,7 +69,7 @@ az deployment group create \
   --name "$deployment_name" \
   --resource-group "$rg_name" \
   --template-file "$template" \
-  --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" deploymentStamp="$deployment_name" \
+  --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" imageTag="$image_tag" deploymentStamp="$deployment_name" \
   --query "properties.outputs" -o json
 
 fqdn="$(az containerapp show -g "$rg_name" -n ca-mcp-amg-proxy --query properties.configuration.ingress.fqdn -o tsv)"
@@ -74,3 +77,17 @@ fqdn="$(az containerapp show -g "$rg_name" -n ca-mcp-amg-proxy --query propertie
 log_ok "Deployed. MCP endpoint: https://$fqdn/mcp"
 log_info "Transport: streamable-http"
 log_info "Auth: managed identity (Grafana Viewer RBAC on the Managed Grafana resource)"
+
+log_step "Waiting for revision to become Healthy"
+latest_rev="$(az containerapp show -g "$rg_name" -n ca-mcp-amg-proxy --query properties.latestRevisionName -o tsv)"
+[[ -n "$latest_rev" ]] || die "Unable to read latestRevisionName for ca-mcp-amg-proxy"
+for i in {1..30}; do
+  health_state="$(az containerapp revision show -g "$rg_name" -n ca-mcp-amg-proxy --revision "$latest_rev" --query properties.healthState -o tsv 2>/dev/null || true)"
+  replicas="$(az containerapp revision show -g "$rg_name" -n ca-mcp-amg-proxy --revision "$latest_rev" --query properties.replicas -o tsv 2>/dev/null || true)"
+  if [[ "$health_state" == "Healthy" ]]; then
+    log_ok "Revision $latest_rev is Healthy (replicas=$replicas)"
+    break
+  fi
+  log_info "Revision $latest_rev healthState=$health_state replicas=$replicas (waiting...)"
+  sleep 5
+done

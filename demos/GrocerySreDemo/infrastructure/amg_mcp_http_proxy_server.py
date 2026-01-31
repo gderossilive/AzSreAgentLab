@@ -2,10 +2,13 @@ import asyncio
 import contextlib
 import json
 import os
+import select
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
@@ -40,6 +43,15 @@ class McpStdioClient:
         assert self._proc.stdin and self._proc.stdout
         self._stdin = self._proc.stdin
         self._stdout = self._proc.stdout
+        self._stdout_fd = self._proc.stdout.fileno()
+        self._recv_buf = b""
+
+        # Enforce timeouts reliably: avoid blocking reads on pipes.
+        try:
+            os.set_blocking(self._stdout_fd, False)
+        except Exception:
+            # Best-effort; timeouts may be less strict if the runtime disallows this.
+            pass
 
         self._lock = threading.Lock()
 
@@ -82,17 +94,23 @@ class McpStdioClient:
     def _read_message(self, timeout_s: float = 30.0) -> dict[str, Any]:
         # Minimal LSP-style framing: headers until \r\n\r\n then JSON body.
         start = time.time()
-        headers = b""
-        while b"\r\n\r\n" not in headers:
-            if time.time() - start > timeout_s:
+        buf = self._recv_buf
+        while b"\r\n\r\n" not in buf:
+            remaining = timeout_s - (time.time() - start)
+            if remaining <= 0:
                 raise TimeoutError("Timed out waiting for MCP headers")
-            chunk = self._stdout.read(1)
+
+            r, _, _ = select.select([self._stdout_fd], [], [], remaining)
+            if not r:
+                raise TimeoutError("Timed out waiting for MCP headers")
+
+            chunk = os.read(self._stdout_fd, 4096)
             if not chunk:
                 rc = self._proc.poll()
                 raise RuntimeError(f"MCP server stdout closed (returncode={rc})")
-            headers += chunk
+            buf += chunk
 
-        header_blob, rest = headers.split(b"\r\n\r\n", 1)
+        header_blob, rest = buf.split(b"\r\n\r\n", 1)
         content_length: Optional[int] = None
         for line in header_blob.split(b"\r\n"):
             if line.lower().startswith(b"content-length:"):
@@ -101,17 +119,25 @@ class McpStdioClient:
         if content_length is None:
             raise ValueError(f"Missing Content-Length header: {header_blob!r}")
 
-        body = rest
-        while len(body) < content_length:
-            if time.time() - start > timeout_s:
+        while len(rest) < content_length:
+            remaining = timeout_s - (time.time() - start)
+            if remaining <= 0:
                 raise TimeoutError("Timed out waiting for MCP body")
-            chunk = self._stdout.read(content_length - len(body))
+
+            r, _, _ = select.select([self._stdout_fd], [], [], remaining)
+            if not r:
+                raise TimeoutError("Timed out waiting for MCP body")
+
+            chunk = os.read(self._stdout_fd, max(1, content_length - len(rest)))
             if not chunk:
                 rc = self._proc.poll()
                 raise RuntimeError(f"MCP server stdout closed while reading body (returncode={rc})")
-            body += chunk
+            rest += chunk
 
-        return json.loads(body.decode("utf-8"))
+        body_bytes = rest[:content_length]
+        self._recv_buf = rest[content_length:]
+
+        return json.loads(body_bytes.decode("utf-8"))
 
     def request(self, method: str, params: dict[str, Any], req_id: int, timeout_s: float = 60.0) -> JsonRpcResponse:
         with self._lock:
@@ -132,6 +158,16 @@ class McpStdioClient:
 def _env_str(name: str, default: str = "") -> str:
     value = os.getenv(name)
     return default if value is None or value == "" else value
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw.strip())
+    except Exception:
+        return default
 
 
 def _schema_properties(tools_list_resp: dict[str, Any], tool_name: str) -> set[str]:
@@ -159,15 +195,35 @@ class AmgMcpBackend:
         ]
         self._client = McpStdioClient(argv)
 
-        init = self._call("initialize", {"capabilities": {}})
+        init = self._call(
+            "initialize",
+            {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "amg-mcp-http-proxy", "version": ""},
+            },
+            timeout_s=float(_env_int("AMG_MCP_INIT_TIMEOUT_S", 20)),
+        )
         if init.is_error:
             raise RuntimeError(f"amg-mcp initialize failed: {init.raw.get('error')}")
 
-        tools = self._call("tools/list", {})
+        tools = self._call("tools/list", {}, timeout_s=float(_env_int("AMG_MCP_TOOLS_LIST_TIMEOUT_S", 30)))
         if tools.is_error:
             raise RuntimeError(f"amg-mcp tools/list failed: {tools.raw.get('error')}")
 
-        self._supported_query_keys = _schema_properties(tools.raw, "amgmcp_query_datasource")
+        # Cache backend tool schemas so we can safely filter forwarded arguments
+        # (the underlying tool parameter names may vary by version).
+        self._tool_supported_keys: dict[str, set[str]] = {}
+        for tool_name in (
+            "amgmcp_datasource_list",
+            "amgmcp_query_datasource",
+            "amgmcp_dashboard_search",
+            "amgmcp_query_resource_log",
+            "amgmcp_query_resource_graph",
+            "amgmcp_query_azure_subscriptions",
+            "amgmcp_image_render",
+        ):
+            self._tool_supported_keys[tool_name] = _schema_properties(tools.raw, tool_name)
 
     def close(self) -> None:
         self._client.close()
@@ -178,11 +234,151 @@ class AmgMcpBackend:
         return self._client.request(method, params, req_id=req_id, timeout_s=timeout_s)
 
     def tool_call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if name == "amgmcp_query_datasource" and self._supported_query_keys:
-            arguments = {k: v for k, v in arguments.items() if k in self._supported_query_keys}
+        supported_keys = self._tool_supported_keys.get(name)
+        if supported_keys:
+            arguments = {k: v for k, v in arguments.items() if k in supported_keys}
 
-        resp = self._call("tools/call", {"name": name, "arguments": arguments}, timeout_s=120.0)
+        resp = self._call(
+            "tools/call",
+            {"name": name, "arguments": arguments},
+            # Keep this below common MCP client timeouts (~100s).
+            timeout_s=float(_env_int("AMG_MCP_TOOL_TIMEOUT_S", 90)),
+        )
         return resp.raw
+
+
+def _grafana_aad_resource() -> str:
+    # Default resource for Azure Managed Grafana data-plane API.
+    # (Managed Identity endpoint uses `resource=...`, not OAuth scopes.)
+    return _env_str("GRAFANA_AAD_RESOURCE", "https://grafana.azure.com")
+
+
+def _grafana_http_timeout_s() -> float:
+    return float(_env_int("GRAFANA_HTTP_TIMEOUT_S", 20))
+
+
+def _get_managed_identity_access_token(resource: str) -> str:
+    endpoint = _env_str("IDENTITY_ENDPOINT").strip()
+    secret = _env_str("IDENTITY_HEADER").strip()
+    if not endpoint or not secret:
+        raise RuntimeError("Managed identity endpoint not available (IDENTITY_ENDPOINT/IDENTITY_HEADER missing)")
+
+    params: dict[str, str] = {
+        "api-version": "2019-08-01",
+        "resource": resource,
+    }
+    client_id = _env_str("AZURE_CLIENT_ID").strip()
+    if client_id:
+        # Needed for user-assigned managed identity.
+        params["client_id"] = client_id
+
+    join_char = "&" if "?" in endpoint else "?"
+    url = endpoint + join_char + urllib.parse.urlencode(params)
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "X-IDENTITY-HEADER": secret,
+            # Some MSI endpoints require Metadata=true.
+            "Metadata": "true",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=_grafana_http_timeout_s()) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    token = payload.get("access_token")
+    if not token:
+        raise RuntimeError(f"Managed identity token response missing access_token: keys={list(payload.keys())}")
+    return token
+
+
+def _grafana_get_json(path: str) -> Any:
+    endpoint = _env_str("GRAFANA_ENDPOINT").rstrip("/")
+    if not endpoint:
+        raise RuntimeError("GRAFANA_ENDPOINT is required")
+    url = endpoint + path
+
+    token = _get_managed_identity_access_token(_grafana_aad_resource())
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=_grafana_http_timeout_s()) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _backend_tool_call_safe(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    try:
+        backend = _get_backend()
+        return backend.tool_call(name, arguments)
+    except TimeoutError as exc:
+        return {
+            "ok": False,
+            "errorType": "TimeoutError",
+            "error": str(exc),
+            "hint": "The underlying amg-mcp stdio call exceeded the proxy timeout. Try again or increase AMG_MCP_TOOL_TIMEOUT_S (keep it <100s to avoid client cancellation).",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "errorType": type(exc).__name__,
+            "error": str(exc),
+        }
+
+
+_datasource_cache_lock = threading.Lock()
+_datasource_cache_value: Optional[dict[str, Any]] = None
+_datasource_cache_at: float = 0.0
+
+
+def _datasource_cache_ttl_s() -> int:
+    # Cache the list briefly to keep investigation workflows snappy and to avoid
+    # repeated slow calls causing client-side timeouts.
+    return _env_int("DATASOURCE_LIST_CACHE_TTL_S", 300)
+
+
+def _cached_datasource_list() -> Optional[dict[str, Any]]:
+    ttl = _datasource_cache_ttl_s()
+    if ttl <= 0:
+        return None
+    with _datasource_cache_lock:
+        if _datasource_cache_value is None:
+            return None
+        if time.time() - _datasource_cache_at > ttl:
+            return None
+        return _datasource_cache_value
+
+
+def _set_cached_datasource_list(value: dict[str, Any]) -> None:
+    with _datasource_cache_lock:
+        global _datasource_cache_value, _datasource_cache_at
+        _datasource_cache_value = value
+        _datasource_cache_at = time.time()
+
+
+_WRITE_TOOLS: set[str] = set()
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    raw = raw.strip().lower()
+    if raw in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _require_write_enabled(tool_name: str) -> None:
+    if tool_name not in _WRITE_TOOLS:
+        return
+    if _env_bool("ENABLE_GRAFANA_WRITE_TOOLS", default=False):
+        return
+    raise PermissionError(
+        f"{tool_name} is disabled by default. Set ENABLE_GRAFANA_WRITE_TOOLS=true to enable write-capable Grafana tools."
+    )
 
 
 mcp = FastMCP(
@@ -480,8 +676,18 @@ def _get_backend() -> AmgMcpBackend:
 async def amgmcp_datasource_list() -> dict[str, Any]:
     """List datasources from Azure Managed Grafana using managed identity."""
 
-    backend = await asyncio.to_thread(_get_backend)
-    return await asyncio.to_thread(backend.tool_call, "amgmcp_datasource_list", {})
+    cached = await asyncio.to_thread(_cached_datasource_list)
+    if cached is not None:
+        return cached
+
+    # Prefer the underlying amg-mcp tool.
+    # The direct Grafana data-plane API call to /api/datasources can return 401
+    # in some Managed Identity setups; relying on amg-mcp keeps behavior stable.
+    out = await asyncio.to_thread(_backend_tool_call_safe, "amgmcp_datasource_list", {})
+    # Cache successful responses even if they came from the slower path.
+    if isinstance(out, dict) and "error" not in out:
+        await asyncio.to_thread(_set_cached_datasource_list, out)
+    return out
 
 
 @mcp.tool()
@@ -536,6 +742,110 @@ async def amgmcp_query_datasource(
 
     backend = await asyncio.to_thread(_get_backend)
     return await asyncio.to_thread(backend.tool_call, "amgmcp_query_datasource", args)
+
+
+@mcp.tool()
+async def amgmcp_dashboard_search(
+    query: Optional[str] = None,
+    search: Optional[str] = None,
+    arguments: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Search dashboards in Azure Managed Grafana (managed identity)."""
+
+    args: dict[str, Any] = dict(arguments or {})
+    q = query if query is not None else search
+    if q is not None:
+        args.setdefault("query", q)
+        args.setdefault("search", q)
+
+    backend = await asyncio.to_thread(_get_backend)
+    return await asyncio.to_thread(backend.tool_call, "amgmcp_dashboard_search", args)
+
+
+@mcp.tool()
+async def amgmcp_query_resource_log(
+    query: Optional[str] = None,
+    kql: Optional[str] = None,
+    resourceId: Optional[str] = None,
+    arguments: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Run KQL against Azure Monitor resource logs via Grafana's Azure Monitor datasource (managed identity)."""
+
+    args: dict[str, Any] = dict(arguments or {})
+    q = query if query is not None else kql
+    if q is not None:
+        args.setdefault("query", q)
+        args.setdefault("kql", q)
+    if resourceId is not None:
+        args.setdefault("resourceId", resourceId)
+
+    backend = await asyncio.to_thread(_get_backend)
+    return await asyncio.to_thread(backend.tool_call, "amgmcp_query_resource_log", args)
+
+
+@mcp.tool()
+async def amgmcp_query_resource_graph(
+    query: Optional[str] = None,
+    kql: Optional[str] = None,
+    subscriptions: Optional[list[str]] = None,
+    arguments: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Run an Azure Resource Graph query via Grafana (managed identity)."""
+
+    args: dict[str, Any] = dict(arguments or {})
+    q = query if query is not None else kql
+    if q is not None:
+        args.setdefault("query", q)
+        args.setdefault("kql", q)
+    if subscriptions is not None:
+        args.setdefault("subscriptions", subscriptions)
+
+    backend = await asyncio.to_thread(_get_backend)
+    return await asyncio.to_thread(backend.tool_call, "amgmcp_query_resource_graph", args)
+
+
+@mcp.tool()
+async def amgmcp_query_azure_subscriptions(arguments: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """List subscriptions visible to Grafana's Azure Monitor datasource (managed identity)."""
+
+    args: dict[str, Any] = dict(arguments or {})
+    backend = await asyncio.to_thread(_get_backend)
+    return await asyncio.to_thread(backend.tool_call, "amgmcp_query_azure_subscriptions", args)
+
+
+@mcp.tool()
+async def amgmcp_image_render(
+    dashboardUid: Optional[str] = None,
+    uid: Optional[str] = None,
+    panelId: Optional[int] = None,
+    fromMs: Optional[int] = None,
+    toMs: Optional[int] = None,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    arguments: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Render a Grafana dashboard/panel to an image (managed identity)."""
+
+    args: dict[str, Any] = dict(arguments or {})
+    the_uid = dashboardUid if dashboardUid is not None else uid
+    if the_uid is not None:
+        args.setdefault("dashboardUid", the_uid)
+        args.setdefault("uid", the_uid)
+    if panelId is not None:
+        args.setdefault("panelId", panelId)
+    if fromMs is not None:
+        args.setdefault("from", fromMs)
+        args.setdefault("fromMs", fromMs)
+    if toMs is not None:
+        args.setdefault("to", toMs)
+        args.setdefault("toMs", toMs)
+    if width is not None:
+        args.setdefault("width", width)
+    if height is not None:
+        args.setdefault("height", height)
+
+    backend = await asyncio.to_thread(_get_backend)
+    return await asyncio.to_thread(backend.tool_call, "amgmcp_image_render", args)
 
 
 if __name__ == "__main__":

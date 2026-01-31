@@ -214,6 +214,20 @@ Current lab endpoint:
 - https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/mcp
 - Health: https://ca-mcp-amg-proxy.mangoplant-51da0571.swedencentral.azurecontainerapps.io/healthz
 
+#### Tool surface (MI HTTP proxy)
+
+The MI-based HTTP proxy intentionally exposes a small, investigation-focused MCP tool surface:
+
+- `amgmcp_datasource_list`
+- `amgmcp_query_datasource` (commonly used for Loki queries)
+- `amgmcp_dashboard_search`
+- `amgmcp_image_render`
+- `amgmcp_query_resource_log`
+- `amgmcp_query_resource_graph`
+- `amgmcp_query_azure_subscriptions`
+
+It does NOT expose dashboard download/upload or system backup/restore tools.
+
 #### Azure SRE Agent connector settings (portal)
 
 - **Connection type**: Streamable HTTP
