@@ -22,8 +22,8 @@ Options:
                            Example: https://<fqdn>/mcp
   --subscription-id <id>   Subscription id for Resource Graph queries (default: env AZURE_SUBSCRIPTION_ID)
   --resource-id <id>       Resource id for resource-log queries (optional; if required, tool will be skipped)
-    --dashboard-uid <uid>    Grafana dashboard UID to use for amgmcp_image_render
-                                                     Default: afbppudwbhl34b
+    --dashboard-uid <uid>     Grafana dashboard UID to use for dashboard summary + panel render
+                                                        Default: afbppudwbhl34b
   -h|--help                Show help
 
 Auto-detect behavior:
@@ -119,6 +119,12 @@ def _http(method: str, url: str, *, headers: Optional[Dict[str, str]] = None, js
         resp_headers = {k.lower(): v for k, v in e.headers.items()}
         payload = e.read() or b''
         return status, resp_headers, payload
+    except TimeoutError as e:
+        body = json.dumps({'_errorType': 'TimeoutError', '_error': str(e)}, separators=(',', ':')).encode('utf-8')
+        return 0, {}, body
+    except urllib.error.URLError as e:
+        body = json.dumps({'_errorType': 'URLError', '_error': str(e)}, separators=(',', ':')).encode('utf-8')
+        return 0, {}, body
 
 
 def _json_loads_maybe(payload: bytes) -> Any:
@@ -293,17 +299,62 @@ results_cache: Dict[str, Any] = {}
 
 # Pre-run dependencies for better end-to-end coverage
 # - datasource_list helps populate datasource UID for query_datasource
-# - dashboard_search helps populate UID for image_render
+# - get_dashboard_summary lists panels so we can render just one panel
+
+
+def _pick_panel_id(summary_tool_resp: Any) -> Optional[int]:
+    if not isinstance(summary_tool_resp, dict):
+        return None
+    result = summary_tool_resp.get('result')
+    if not isinstance(result, dict):
+        return None
+    sc = result.get('structuredContent')
+    if not isinstance(sc, dict):
+        return None
+    panels = sc.get('panels')
+    if not isinstance(panels, list):
+        return None
+    for p in panels:
+        if not isinstance(p, dict):
+            continue
+        if p.get('renderable') is True:
+            pid = p.get('id')
+            try:
+                if pid is not None:
+                    return int(pid)
+            except Exception:
+                continue
+    return None
 
 def run_tool(name: str, args: Dict[str, Any], req_id: int) -> Tuple[bool, Any]:
     start_t = time.time()
     ok2, resp = _mcp_call(session_id, req_id, 'tools/call', {'name': name, 'arguments': args})
     dt2 = time.time() - start_t
-    if ok2:
+
+    tool_ok = False
+    tool_err = None
+    if ok2 and isinstance(resp, dict):
+        result = resp.get('result')
+        if isinstance(result, dict):
+            if result.get('isError') is True:
+                tool_err = result
+            else:
+                sc = result.get('structuredContent')
+                if isinstance(sc, dict) and sc.get('ok') is False:
+                    tool_err = sc
+                else:
+                    tool_ok = True
+        else:
+            # Unexpected shape; treat as failure.
+            tool_err = {'error': 'Missing result object'}
+    else:
+        tool_err = resp
+
+    if tool_ok:
         print(f"[OK]  {name} dt={dt2:.2f}s args={_short(args, 200)}")
     else:
-        print(f"[FAIL] {name} dt={dt2:.2f}s args={_short(args, 200)} resp={_short(resp)}")
-    return ok2, resp
+        print(f"[FAIL] {name} dt={dt2:.2f}s args={_short(args, 200)} resp={_short(tool_err)}")
+    return tool_ok, resp
 
 
 req_id = 10
@@ -324,6 +375,34 @@ if 'amgmcp_dashboard_search' in by_name:
     if not ok2:
         failures += 1
 
+# 2b) dashboard summary (panel inventory)
+if 'amgmcp_get_dashboard_summary' in by_name:
+    ok2, resp = run_tool('amgmcp_get_dashboard_summary', {'dashboardUid': dashboard_uid}, req_id)
+    req_id += 1
+    results_cache['amgmcp_get_dashboard_summary'] = resp
+    if not ok2:
+        failures += 1
+
+# 2c) panel data (query_range behind a panel)
+if 'amgmcp_get_panel_data' in by_name:
+    end_ms = _now_ms()
+    start_ms = end_ms - 15 * 60 * 1000
+    ok2, resp = run_tool(
+        'amgmcp_get_panel_data',
+        {
+            'dashboardUid': dashboard_uid,
+            'panelTitle': 'Error rate (errors/s)',
+            'fromMs': start_ms,
+            'toMs': end_ms,
+            'stepMs': 30_000,
+        },
+        req_id,
+    )
+    req_id += 1
+    results_cache['amgmcp_get_panel_data'] = resp
+    if not ok2:
+        failures += 1
+
 # 3) subscription list
 if 'amgmcp_query_azure_subscriptions' in by_name:
     ok2, resp = run_tool('amgmcp_query_azure_subscriptions', {}, req_id)
@@ -337,6 +416,7 @@ for tool_name in sorted(by_name.keys()):
     if tool_name in (
         'amgmcp_datasource_list',
         'amgmcp_dashboard_search',
+        'amgmcp_get_panel_data',
         'amgmcp_query_azure_subscriptions',
     ):
         continue
@@ -394,6 +474,9 @@ for tool_name in sorted(by_name.keys()):
         end_ms = _now_ms()
         start_ms = end_ms - 60 * 60 * 1000
         args['dashboardUid'] = dash_uid
+        pid = _pick_panel_id(results_cache.get('amgmcp_get_dashboard_summary'))
+        if pid is not None:
+            args['panelId'] = pid
         args['fromMs'] = start_ms
         args['toMs'] = end_ms
         args['width'] = 1000

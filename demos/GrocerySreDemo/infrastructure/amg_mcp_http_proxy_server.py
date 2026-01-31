@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import contextlib
 import json
 import os
@@ -7,10 +8,13 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
+
+import pathlib
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp
@@ -283,6 +287,24 @@ def _grafana_http_timeout_s() -> float:
     return float(_env_int("GRAFANA_HTTP_TIMEOUT_S", 20))
 
 
+def _grafana_render_timeout_s() -> float:
+    # Keep this comfortably below common MCP client read timeouts (~60s) so we
+    # can return a structured error rather than letting clients cancel.
+    return float(_env_int("GRAFANA_RENDER_TIMEOUT_S", 20))
+
+
+def _grafana_org_id() -> int:
+    return _env_int("GRAFANA_ORG_ID", 1)
+
+def _grafana_auth_headers(*, accept: str) -> dict[str, str]:
+    aad_token = _get_managed_identity_access_token(_grafana_aad_resource())
+    return {
+        "Authorization": f"Bearer {aad_token}",
+        "Accept": accept,
+        "X-Grafana-Org-Id": str(_grafana_org_id()),
+    }
+
+
 def _loki_http_timeout_s() -> float:
     return float(_env_int("LOKI_HTTP_TIMEOUT_S", 15))
 
@@ -297,7 +319,14 @@ def _looks_like_loki_datasource(name: Optional[str]) -> bool:
     return "loki" in name.strip().lower()
 
 
-def _loki_query_range(*, query: str, start_ms: int, end_ms: int, limit: Optional[int]) -> dict[str, Any]:
+def _loki_query_range(
+    *,
+    query: str,
+    start_ms: int,
+    end_ms: int,
+    limit: Optional[int],
+    step_s: Optional[float] = None,
+) -> dict[str, Any]:
     endpoint = _loki_endpoint()
     if not endpoint:
         raise RuntimeError("LOKI_ENDPOINT is not set")
@@ -310,6 +339,9 @@ def _loki_query_range(*, query: str, start_ms: int, end_ms: int, limit: Optional
     }
     if limit is not None:
         params["limit"] = str(int(limit))
+    if step_s is not None:
+        # Loki expects step as seconds (float ok).
+        params["step"] = str(step_s)
 
     # Support either a bare base URL (https://host) or a base that already includes /loki.
     base = endpoint
@@ -320,9 +352,153 @@ def _loki_query_range(*, query: str, start_ms: int, end_ms: int, limit: Optional
 
     url = url + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=_loki_http_timeout_s()) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
-    return payload
+    try:
+        with urllib.request.urlopen(req, timeout=_loki_http_timeout_s()) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        return payload
+    except urllib.error.HTTPError as http_err:
+        # Include Loki's error body (it usually contains a parse error message).
+        body = ""
+        try:
+            body = http_err.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        body = (body or "").strip()
+        if len(body) > 2000:
+            body = body[:2000] + "..."
+        raise RuntimeError(
+            f"Loki query_range failed (HTTP {http_err.code}). "
+            f"Body={body or '<empty>'}. "
+            f"Query={query}"
+        ) from http_err
+
+
+def _template_extract_default_vars(uid: str) -> dict[str, str]:
+    """Extract a small set of templating defaults from the baked-in dashboard template."""
+    path = _template_path_for_dashboard_uid(uid)
+    if path is None or not path.exists():
+        return {}
+    obj = json.loads(path.read_text(encoding="utf-8"))
+    dash = obj.get("dashboard")
+    if not isinstance(dash, dict):
+        return {}
+    templating = dash.get("templating")
+    if not isinstance(templating, dict):
+        return {}
+    items = templating.get("list")
+    if not isinstance(items, list):
+        return {}
+
+    out: dict[str, str] = {}
+    for v in items:
+        if not isinstance(v, dict):
+            continue
+        name = v.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        current = v.get("current")
+        if isinstance(current, dict):
+            value = current.get("value")
+            if isinstance(value, str) and value.strip():
+                out[name] = value.strip()
+    return out
+
+
+def _format_duration_s(seconds: int) -> str:
+    seconds = max(1, int(seconds))
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def _derive_grafana_macro_vars(*, start_ms: int, end_ms: int, step_ms: int) -> dict[str, str]:
+    """Provide replacements for common Grafana macros used in LogQL queries."""
+    range_ms = max(0, int(end_ms) - int(start_ms))
+    range_s = int(range_ms / 1000)
+    interval_s = max(1, int(step_ms / 1000))
+
+    return {
+        "__interval": _format_duration_s(interval_s),
+        "__interval_ms": str(interval_s * 1000),
+        "__range": _format_duration_s(range_s if range_s > 0 else 1),
+        "__range_s": str(range_s),
+        "__range_ms": str(range_ms),
+    }
+
+
+def _apply_template_vars(expr: str, vars_map: dict[str, str]) -> str:
+    out = str(expr)
+    for k, v in vars_map.items():
+        out = out.replace(f"${k}", v).replace(f"${{{k}}}", v)
+    return out
+
+
+def _template_find_panel_query(
+    *,
+    uid: str,
+    panel_title: str,
+    ref_id: str = "A",
+) -> tuple[dict[str, Any], str]:
+    """Find the first query expression for a panel title in the baked-in template.
+
+    Returns (panel_summary, expr).
+    """
+    path = _template_path_for_dashboard_uid(uid)
+    if path is None:
+        raise FileNotFoundError(f"No dashboard template mapping for uid={uid}")
+    if not path.exists():
+        raise FileNotFoundError(f"Dashboard template not found in container: {path}")
+
+    obj = json.loads(path.read_text(encoding="utf-8"))
+    dash = obj.get("dashboard")
+    if not isinstance(dash, dict):
+        raise ValueError("Template JSON missing 'dashboard' object")
+
+    panels = dash.get("panels")
+    if not isinstance(panels, list):
+        raise ValueError("Template JSON missing 'dashboard.panels' list")
+
+    wanted = (panel_title or "").strip().lower()
+    if not wanted:
+        raise ValueError("panelTitle is required")
+
+    for idx, panel in enumerate(panels, start=1):
+        if not isinstance(panel, dict):
+            continue
+        title = panel.get("title")
+        if not isinstance(title, str) or title.strip().lower() != wanted:
+            continue
+
+        targets = panel.get("targets")
+        if not isinstance(targets, list) or not targets:
+            raise ValueError(f"Panel '{panel_title}' has no targets")
+
+        chosen = None
+        for t in targets:
+            if not isinstance(t, dict):
+                continue
+            if str(t.get("refId") or "A").strip().upper() == ref_id.strip().upper():
+                chosen = t
+                break
+        if chosen is None:
+            chosen = next((t for t in targets if isinstance(t, dict)), None)
+        if not isinstance(chosen, dict):
+            raise ValueError(f"Panel '{panel_title}' has no usable target")
+
+        expr = chosen.get("expr") or chosen.get("query")
+        if not isinstance(expr, str) or not expr.strip():
+            raise ValueError(f"Panel '{panel_title}' target has no expr")
+
+        panel_summary = {
+            "panelIndex": idx,
+            "title": title,
+            "type": panel.get("type"),
+        }
+        return panel_summary, expr
+
+    raise KeyError(f"Panel titled '{panel_title}' not found in template")
 
 
 def _get_managed_identity_access_token(resource: str) -> str:
@@ -365,14 +541,316 @@ def _grafana_get_json(path: str) -> Any:
         raise RuntimeError("GRAFANA_ENDPOINT is required")
     url = endpoint + path
 
-    token = _get_managed_identity_access_token(_grafana_aad_resource())
     req = urllib.request.Request(
         url,
         method="GET",
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        headers=_grafana_auth_headers(accept="application/json"),
     )
     with urllib.request.urlopen(req, timeout=_grafana_http_timeout_s()) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _grafana_get_bytes(path: str, *, accept: str) -> bytes:
+    endpoint = _env_str("GRAFANA_ENDPOINT").rstrip("/")
+    if not endpoint:
+        raise RuntimeError("GRAFANA_ENDPOINT is required")
+    url = endpoint + path
+
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers=_grafana_auth_headers(accept=accept),
+    )
+    with urllib.request.urlopen(req, timeout=_grafana_render_timeout_s()) as resp:
+        return resp.read() or b""
+
+
+def _grafana_dashboard_get_by_uid(uid: str) -> dict[str, Any]:
+    # GET /api/dashboards/uid/:uid
+    return _grafana_get_json(f"/api/dashboards/uid/{urllib.parse.quote(uid)}")
+
+
+def _grafana_extract_slug(dashboard_by_uid: dict[str, Any]) -> str:
+    meta = dashboard_by_uid.get("meta")
+    if isinstance(meta, dict):
+        slug = meta.get("slug")
+        if isinstance(slug, str) and slug.strip():
+            return slug.strip()
+    return "-"
+
+
+def _grafana_first_panel_id(dashboard_by_uid: dict[str, Any]) -> Optional[int]:
+    dash = dashboard_by_uid.get("dashboard")
+    if not isinstance(dash, dict):
+        return None
+
+    def _walk_panels(panels: Any) -> Optional[int]:
+        if not isinstance(panels, list):
+            return None
+        for panel in panels:
+            if not isinstance(panel, dict):
+                continue
+            # Rows contain nested panels.
+            nested = panel.get("panels")
+            found = _walk_panels(nested)
+            if found is not None:
+                return found
+
+            # Skip non-renderable containers.
+            if panel.get("type") in ("row", "dashboard", "text"):
+                continue
+
+            pid = panel.get("id")
+            try:
+                if pid is not None:
+                    return int(pid)
+            except Exception:
+                continue
+        return None
+
+    return _walk_panels(dash.get("panels"))
+
+
+def _grafana_panel_summaries(dashboard_by_uid: dict[str, Any]) -> list[dict[str, Any]]:
+    dash = dashboard_by_uid.get("dashboard")
+    if not isinstance(dash, dict):
+        return []
+
+    out: list[dict[str, Any]] = []
+
+    def _walk(panels: Any, *, row_title: Optional[str] = None) -> None:
+        if not isinstance(panels, list):
+            return
+        for panel in panels:
+            if not isinstance(panel, dict):
+                continue
+
+            p_type = panel.get("type")
+            title = panel.get("title")
+            pid = panel.get("id")
+            grid = panel.get("gridPos")
+
+            # Rows contain nested panels.
+            nested = panel.get("panels")
+            if isinstance(nested, list):
+                _walk(nested, row_title=str(title) if isinstance(title, str) else row_title)
+
+            summary: dict[str, Any] = {
+                "id": pid,
+                "title": title,
+                "type": p_type,
+                "rowTitle": row_title,
+            }
+
+            if isinstance(grid, dict):
+                # Common layout keys: x,y,w,h
+                for k in ("x", "y", "w", "h"):
+                    if k in grid:
+                        summary.setdefault("gridPos", {})[k] = grid.get(k)
+
+            # Mark whether this panel is likely renderable via /render/d-solo.
+            pid_int = 0
+            try:
+                if isinstance(pid, int):
+                    pid_int = pid
+                elif isinstance(pid, str) and pid.strip():
+                    pid_int = int(pid.strip())
+            except Exception:
+                pid_int = 0
+            summary["renderable"] = pid_int > 0 and p_type not in ("row", "dashboard")
+
+            out.append(summary)
+
+    _walk(dash.get("panels"))
+
+    # Keep a stable ordering: rows/containers may have null IDs.
+    def _sort_key(p: dict[str, Any]) -> tuple[int, str]:
+        pid = p.get("id")
+        n = 0
+        try:
+            if isinstance(pid, int):
+                n = pid
+            elif isinstance(pid, str) and pid.strip():
+                n = int(pid.strip())
+        except Exception:
+            n = 0
+        t = p.get("title")
+        return (n, str(t) if t is not None else "")
+
+    out.sort(key=_sort_key)
+    return out
+
+
+def _grafana_dashboard_summary(uid: str) -> dict[str, Any]:
+    dashboard_by_uid = _grafana_dashboard_get_by_uid(uid)
+    dash = dashboard_by_uid.get("dashboard")
+    title = None
+    if isinstance(dash, dict):
+        title = dash.get("title")
+
+    return {
+        "dashboard": {
+            "uid": uid,
+            "slug": _grafana_extract_slug(dashboard_by_uid),
+            "title": title,
+        },
+        "panels": _grafana_panel_summaries(dashboard_by_uid),
+    }
+
+
+def _template_path_for_dashboard_uid(uid: str) -> Optional[pathlib.Path]:
+    # These files are baked into the proxy container image.
+    mapping = {
+        "afbppudwbhl34b": pathlib.Path("/app/grafana/grocery-sre-overview.dashboard.template.json"),
+    }
+    return mapping.get(uid)
+
+
+def _template_dashboard_summary(uid: str) -> dict[str, Any]:
+    path = _template_path_for_dashboard_uid(uid)
+    if path is None:
+        raise FileNotFoundError(f"No dashboard template mapping for uid={uid}")
+    if not path.exists():
+        raise FileNotFoundError(f"Dashboard template not found in container: {path}")
+
+    obj = json.loads(path.read_text(encoding="utf-8"))
+    dash = obj.get("dashboard")
+    if not isinstance(dash, dict):
+        raise ValueError("Template JSON missing 'dashboard' object")
+
+    title = dash.get("title")
+    panels = dash.get("panels")
+    if not isinstance(panels, list):
+        panels = []
+
+    out_panels: list[dict[str, Any]] = []
+    for idx, panel in enumerate(panels, start=1):
+        if not isinstance(panel, dict):
+            continue
+        p_type = panel.get("type")
+        p_title = panel.get("title")
+        grid = panel.get("gridPos")
+        summary: dict[str, Any] = {
+            # Template dashboards typically do not include Grafana-assigned panel IDs.
+            "id": None,
+            "panelIndex": idx,
+            "title": p_title,
+            "type": p_type,
+            "renderable": p_type not in ("row", "dashboard"),
+        }
+        if isinstance(grid, dict):
+            for k in ("x", "y", "w", "h"):
+                if k in grid:
+                    summary.setdefault("gridPos", {})[k] = grid.get(k)
+        out_panels.append(summary)
+
+    return {
+        "dashboard": {
+            "uid": uid,
+            "slug": "-",
+            "title": title,
+        },
+        "panels": out_panels,
+        "warning": {
+            "note": "Grafana API access was unavailable; panel list came from the baked-in dashboard template. Panel IDs are not available from the template.",
+        },
+    }
+
+
+def _grafana_render_png(
+    *,
+    dashboard_uid: str,
+    panel_id: Optional[int],
+    from_ms: Optional[int],
+    to_ms: Optional[int],
+    width: Optional[int],
+    height: Optional[int],
+) -> bytes:
+    uid = (dashboard_uid or "").strip()
+    if not uid:
+        raise ValueError("dashboardUid is required")
+
+    # Prefer rendering a single panel by default: it's faster and less likely
+    # to exceed MCP client timeouts.
+    dashboard_by_uid = _grafana_dashboard_get_by_uid(uid)
+    slug = _grafana_extract_slug(dashboard_by_uid)
+
+    effective_panel_id = panel_id
+    if effective_panel_id is None and not _env_bool("GRAFANA_RENDER_FULL_DASHBOARD", default=False):
+        effective_panel_id = _grafana_first_panel_id(dashboard_by_uid)
+
+    if effective_panel_id is not None:
+        path = f"/render/d-solo/{urllib.parse.quote(uid)}/{urllib.parse.quote(slug)}"
+    else:
+        path = f"/render/d/{urllib.parse.quote(uid)}/{urllib.parse.quote(slug)}"
+
+    params: dict[str, str] = {}
+    # Managed Grafana typically uses orgId=1; include it explicitly.
+    params["orgId"] = str(_grafana_org_id())
+
+    if effective_panel_id is not None:
+        params["panelId"] = str(int(effective_panel_id))
+    if from_ms is not None:
+        params["from"] = str(int(from_ms))
+    if to_ms is not None:
+        params["to"] = str(int(to_ms))
+    if width is not None:
+        params["width"] = str(int(width))
+    if height is not None:
+        params["height"] = str(int(height))
+
+    qs = urllib.parse.urlencode(params)
+    if qs:
+        path = path + "?" + qs
+
+    return _grafana_get_bytes(path, accept="image/png")
+
+
+def _grafana_dashboard_search(query: str) -> Any:
+    # Grafana search API. See: GET /api/search
+    q = (query or "").strip()
+    if not q:
+        q = ""
+    params = urllib.parse.urlencode({"query": q})
+    return _grafana_get_json(f"/api/search?{params}")
+
+
+def _fallback_dashboard_search(query: str) -> list[dict[str, Any]]:
+    # Deterministic fallback for demo scenarios where the stdio backend or
+    # Grafana API is unavailable/unreliable.
+    q = (query or "").lower()
+    uid = _env_str("DEFAULT_GROCERY_SRE_DASHBOARD_UID", "afbppudwbhl34b")
+    title = "Grocery App - SRE Overview (Custom)"
+    if "grocery" in q and "sre" in q and "overview" in q:
+        return [{"uid": uid, "title": title, "type": "dash-db"}]
+    # If the user searches for the exact title, return it too.
+    if title.lower() in q:
+        return [{"uid": uid, "title": title, "type": "dash-db"}]
+    return []
+
+
+def _reset_backend(reason: str) -> None:
+    global _backend
+    try:
+        lock = _backend_lock
+    except Exception:
+        # If called before globals are initialized (shouldn't happen), no-op.
+        return
+
+    with lock:
+        if _backend is None:
+            return
+        try:
+            _backend.close()
+        except Exception:
+            pass
+        _backend = None
+
+    try:
+        sys.stderr.write(f"[proxy] reset amg-mcp backend: {reason}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 def _backend_tool_call_safe(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -380,11 +858,20 @@ def _backend_tool_call_safe(name: str, arguments: dict[str, Any]) -> dict[str, A
         backend = _get_backend()
         return backend.tool_call(name, arguments)
     except TimeoutError as exc:
+        _reset_backend(f"timeout calling {name}: {exc}")
         return {
             "ok": False,
             "errorType": "TimeoutError",
             "error": str(exc),
-            "hint": "The underlying amg-mcp stdio call exceeded the proxy timeout. Try again or increase AMG_MCP_TOOL_TIMEOUT_S (keep it <100s to avoid client cancellation).",
+            "hint": "The underlying amg-mcp stdio call exceeded the proxy timeout. This can happen during backend startup (initialize/tools/list) as well as tool calls. Try again, or increase AMG_MCP_INIT_TIMEOUT_S / AMG_MCP_TOOLS_LIST_TIMEOUT_S / AMG_MCP_TOOL_TIMEOUT_S (keep tool timeout <100s to avoid client cancellation).",
+        }
+    except RuntimeError as exc:
+        _reset_backend(f"runtime error calling {name}: {exc}")
+        return {
+            "ok": False,
+            "errorType": "RuntimeError",
+            "error": str(exc),
+            "hint": "The underlying amg-mcp process appears unhealthy. The proxy reset it; retry the tool call.",
         }
     except Exception as exc:
         return {
@@ -740,6 +1227,24 @@ def _get_backend() -> AmgMcpBackend:
         return _backend
 
 
+def _warm_backend_async() -> None:
+    try:
+        _get_backend()
+        sys.stderr.write("[proxy] amg-mcp backend warm-up complete\n")
+        sys.stderr.flush()
+    except Exception as exc:
+        # Don't fail the app if warm-up fails; tool calls will surface errors.
+        try:
+            sys.stderr.write(f"[proxy] amg-mcp backend warm-up failed: {exc}\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
+
+
+# Best-effort: warm the stdio backend at startup to avoid first-request latency.
+threading.Thread(target=_warm_backend_async, daemon=True).start()
+
+
 @mcp.tool()
 async def amgmcp_datasource_list() -> dict[str, Any]:
     """List datasources from Azure Managed Grafana using managed identity."""
@@ -896,59 +1401,117 @@ async def amgmcp_dashboard_search(
         args.setdefault("query", q)
         args.setdefault("search", q)
 
-    backend = await asyncio.to_thread(_get_backend)
-    return await asyncio.to_thread(backend.tool_call, "amgmcp_dashboard_search", args)
+    # Avoid hanging network calls by default. If you want a real Grafana search,
+    # enable it explicitly.
+    if _env_bool("ENABLE_GRAFANA_DIRECT_SEARCH", default=False):
+        try:
+            payload = await asyncio.to_thread(_grafana_dashboard_search, str(q or ""))
+            return {"ok": True, "source": "grafana-direct", "result": payload}
+        except Exception as exc:
+            backend_resp = await asyncio.to_thread(_backend_tool_call_safe, "amgmcp_dashboard_search", args)
+            return {
+                "ok": False,
+                "source": "grafana-direct",
+                "errorType": type(exc).__name__,
+                "error": str(exc),
+                "backend": backend_resp,
+            }
+
+    return {
+        "ok": True,
+        "source": "fallback",
+        "result": _fallback_dashboard_search(str(q or "")),
+    }
 
 
 @mcp.tool()
-async def amgmcp_query_resource_log(
-    query: Optional[str] = None,
-    kql: Optional[str] = None,
-    resourceId: Optional[str] = None,
-    arguments: Optional[dict[str, Any]] = None,
+async def amgmcp_get_dashboard_summary(
+    dashboardUid: Optional[str] = None,
+    uid: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Run KQL against Azure Monitor resource logs via Grafana's Azure Monitor datasource (managed identity)."""
+    """Get a dashboard summary (title + flattened panel list) from Azure Managed Grafana.
 
-    args: dict[str, Any] = dict(arguments or {})
-    q = query if query is not None else kql
-    if q is not None:
-        args.setdefault("query", q)
-        args.setdefault("kql", q)
-    if resourceId is not None:
-        args.setdefault("resourceId", resourceId)
+    Recommended pattern: use this to understand layout, then render key panels via
+    `amgmcp_image_render` using `panelId` (panel-only rendering).
+    """
 
-    backend = await asyncio.to_thread(_get_backend)
-    return await asyncio.to_thread(backend.tool_call, "amgmcp_query_resource_log", args)
+    the_uid = (dashboardUid if dashboardUid is not None else uid) or _env_str(
+        "DEFAULT_GROCERY_SRE_DASHBOARD_UID", "afbppudwbhl34b"
+    )
+    the_uid = str(the_uid or "").strip()
+    if not the_uid:
+        return {"ok": False, "source": "grafana-direct", "errorType": "ValueError", "error": "dashboardUid is required"}
+
+    try:
+        payload = await asyncio.to_thread(_grafana_dashboard_summary, the_uid)
+        return {"ok": True, "source": "grafana-direct", **payload}
+    except Exception as exc:
+        # If Grafana API access is blocked (common when API key/service accounts are disabled),
+        # fall back to the baked-in dashboard template for the demo dashboard.
+        try:
+            payload = await asyncio.to_thread(_template_dashboard_summary, the_uid)
+            return {"ok": True, "source": "template", **payload, "grafanaError": {"type": type(exc).__name__, "error": str(exc)}}
+        except Exception as fallback_exc:
+            return {
+                "ok": False,
+                "source": "grafana-direct",
+                "errorType": type(exc).__name__,
+                "error": str(exc),
+                "dashboard": {"uid": the_uid},
+                "panels": [],
+                "fallbackError": {"type": type(fallback_exc).__name__, "error": str(fallback_exc)},
+            }
 
 
-@mcp.tool()
-async def amgmcp_query_resource_graph(
-    query: Optional[str] = None,
-    kql: Optional[str] = None,
-    subscriptions: Optional[list[str]] = None,
-    arguments: Optional[dict[str, Any]] = None,
-) -> dict[str, Any]:
-    """Run an Azure Resource Graph query via Grafana (managed identity)."""
+if not _env_bool("DISABLE_AMGMCP_AZURE_TOOLS", default=True):
+    @mcp.tool()
+    async def amgmcp_query_resource_log(
+        query: Optional[str] = None,
+        kql: Optional[str] = None,
+        resourceId: Optional[str] = None,
+        arguments: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Run KQL against Azure Monitor resource logs via Grafana's Azure Monitor datasource (managed identity)."""
 
-    args: dict[str, Any] = dict(arguments or {})
-    q = query if query is not None else kql
-    if q is not None:
-        args.setdefault("query", q)
-        args.setdefault("kql", q)
-    if subscriptions is not None:
-        args.setdefault("subscriptions", subscriptions)
+        args: dict[str, Any] = dict(arguments or {})
+        q = query if query is not None else kql
+        if q is not None:
+            args.setdefault("query", q)
+            args.setdefault("kql", q)
+        if resourceId is not None:
+            args.setdefault("resourceId", resourceId)
 
-    backend = await asyncio.to_thread(_get_backend)
-    return await asyncio.to_thread(backend.tool_call, "amgmcp_query_resource_graph", args)
+        return await asyncio.to_thread(_backend_tool_call_safe, "amgmcp_query_resource_log", args)
 
 
-@mcp.tool()
-async def amgmcp_query_azure_subscriptions(arguments: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    """List subscriptions visible to Grafana's Azure Monitor datasource (managed identity)."""
+if not _env_bool("DISABLE_AMGMCP_AZURE_TOOLS", default=True):
+    @mcp.tool()
+    async def amgmcp_query_resource_graph(
+        query: Optional[str] = None,
+        kql: Optional[str] = None,
+        subscriptions: Optional[list[str]] = None,
+        arguments: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Run an Azure Resource Graph query via Grafana (managed identity)."""
 
-    args: dict[str, Any] = dict(arguments or {})
-    backend = await asyncio.to_thread(_get_backend)
-    return await asyncio.to_thread(backend.tool_call, "amgmcp_query_azure_subscriptions", args)
+        args: dict[str, Any] = dict(arguments or {})
+        q = query if query is not None else kql
+        if q is not None:
+            args.setdefault("query", q)
+            args.setdefault("kql", q)
+        if subscriptions is not None:
+            args.setdefault("subscriptions", subscriptions)
+
+        return await asyncio.to_thread(_backend_tool_call_safe, "amgmcp_query_resource_graph", args)
+
+
+if not _env_bool("DISABLE_AMGMCP_AZURE_TOOLS", default=True):
+    @mcp.tool()
+    async def amgmcp_query_azure_subscriptions(arguments: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        """List subscriptions visible to Grafana's Azure Monitor datasource (managed identity)."""
+
+        args: dict[str, Any] = dict(arguments or {})
+        return await asyncio.to_thread(_backend_tool_call_safe, "amgmcp_query_azure_subscriptions", args)
 
 
 @mcp.tool()
@@ -982,8 +1545,174 @@ async def amgmcp_image_render(
     if height is not None:
         args.setdefault("height", height)
 
-    backend = await asyncio.to_thread(_get_backend)
-    return await asyncio.to_thread(backend.tool_call, "amgmcp_image_render", args)
+    # Prefer Grafana-direct rendering to avoid the stalled stdio backend.
+    the_uid = str(the_uid or "").strip()
+    panel = panelId if panelId is not None else args.get("panelId")
+    try:
+        png = await asyncio.to_thread(
+            _grafana_render_png,
+            dashboard_uid=the_uid,
+            panel_id=int(panel) if panel is not None else None,
+            from_ms=fromMs,
+            to_ms=toMs,
+            width=width,
+            height=height,
+        )
+        b64 = base64.b64encode(png).decode("ascii")
+        return {
+            "ok": True,
+            "source": "grafana-direct",
+            "contentType": "image/png",
+            "imageBase64": b64,
+            "bytes": len(png),
+        }
+    except Exception as exc:
+        warning = {
+            "errorType": type(exc).__name__,
+            "error": str(exc),
+            "hint": "Azure Managed Grafana may not allow AAD-authenticated access to the /render endpoint in all configurations. This proxy can return a placeholder image (ENABLE_PLACEHOLDER_IMAGE_RENDER=true) to keep connector flows reliable.",
+        }
+
+        # Default to returning a placeholder image to keep portal/connector flows
+        # reliable even when Grafana's /render endpoint rejects AAD auth.
+        if _env_bool("ENABLE_PLACEHOLDER_IMAGE_RENDER", default=True):
+            placeholder_b64 = (
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5N5sYAAAAASUVORK5CYII="
+            )
+            return {
+                "ok": True,
+                "source": "placeholder",
+                "contentType": "image/png",
+                "imageBase64": placeholder_b64,
+                "bytes": len(base64.b64decode(placeholder_b64)),
+                "warning": warning,
+            }
+
+        result: dict[str, Any] = {
+            "ok": False,
+            "source": "grafana-direct",
+            **warning,
+        }
+
+        # Optional stdio fallback (off by default because amg-mcp can stall and
+        # cause the overall request to exceed client timeouts).
+        if _env_bool("ENABLE_AMG_MCP_RENDER_FALLBACK", default=False):
+            backend_resp = await asyncio.to_thread(_backend_tool_call_safe, "amgmcp_image_render", args)
+            result["backend"] = backend_resp
+
+        return result
+
+
+@mcp.tool()
+async def amgmcp_get_panel_data(
+    dashboardUid: Optional[str] = None,
+    uid: Optional[str] = None,
+    panelTitle: Optional[str] = None,
+    app: Optional[str] = None,
+    templateVars: Optional[dict[str, str]] = None,
+    fromMs: Optional[int] = None,
+    toMs: Optional[int] = None,
+    stepMs: Optional[int] = None,
+    limit: Optional[int] = None,
+) -> dict[str, Any]:
+    """Retrieve the data behind a dashboard panel (no image rendering).
+
+    For the Grocery demo dashboard, this tool reads the baked-in dashboard template,
+    extracts the panel's Loki query (e.g., "Error rate (errors/s)"), applies default
+    templating variables (like $app), applies optional per-call overrides, and runs
+    Loki `query_range` directly.
+
+    Notes:
+    - Requires LOKI_ENDPOINT to be configured in the proxy.
+    - Uses a reasonable default step if none is provided.
+        - To override Grafana template variables without editing the dashboard template,
+            pass either `app` (convenience for `$app`) and/or `templateVars`.
+    """
+
+    the_uid = (dashboardUid if dashboardUid is not None else uid) or _env_str(
+        "DEFAULT_GROCERY_SRE_DASHBOARD_UID", "afbppudwbhl34b"
+    )
+    the_uid = str(the_uid or "").strip()
+    if not the_uid:
+        return {"ok": False, "source": "template", "errorType": "ValueError", "error": "dashboardUid is required"}
+
+    title = str(panelTitle or "").strip()
+    if not title:
+        return {"ok": False, "source": "template", "errorType": "ValueError", "error": "panelTitle is required"}
+
+    overrides: dict[str, str] = {}
+    if app is not None:
+        a = str(app).strip()
+        if a:
+            overrides["app"] = a
+    if templateVars is not None:
+        if not isinstance(templateVars, dict):
+            return {
+                "ok": False,
+                "source": "template",
+                "errorType": "ValueError",
+                "error": "templateVars must be an object/dict",
+            }
+        for k, v in templateVars.items():
+            if v is None:
+                continue
+            key = str(k).strip()
+            val = str(v).strip()
+            if key and val:
+                overrides[key] = val
+
+    if not _loki_endpoint():
+        return {"ok": False, "source": "loki-direct", "errorType": "RuntimeError", "error": "LOKI_ENDPOINT is not set"}
+
+    # Default time window: last 60m.
+    now_ms = int(time.time() * 1000)
+    end_ms = int(toMs) if toMs is not None else now_ms
+    start_ms = int(fromMs) if fromMs is not None else end_ms - 60 * 60 * 1000
+    if end_ms <= start_ms:
+        return {"ok": False, "source": "loki-direct", "errorType": "ValueError", "error": "toMs must be > fromMs"}
+
+    # Default step: 30s.
+    step_ms = int(stepMs) if stepMs is not None else 30_000
+    if step_ms <= 0:
+        return {"ok": False, "source": "loki-direct", "errorType": "ValueError", "error": "stepMs must be > 0"}
+
+    try:
+        panel_summary, expr = await asyncio.to_thread(
+            _template_find_panel_query,
+            uid=the_uid,
+            panel_title=title,
+            ref_id="A",
+        )
+        vars_map = await asyncio.to_thread(_template_extract_default_vars, the_uid)
+        vars_map.update(_derive_grafana_macro_vars(start_ms=start_ms, end_ms=end_ms, step_ms=step_ms))
+        vars_map.update(overrides)
+        effective_expr = _apply_template_vars(expr, vars_map)
+
+        payload = await asyncio.to_thread(
+            _loki_query_range,
+            query=effective_expr,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            limit=limit,
+            step_s=float(step_ms) / 1000.0,
+        )
+
+        return {
+            "ok": True,
+            "source": "loki-direct",
+            "dashboardUid": the_uid,
+            "panel": panel_summary,
+            "query": {
+                "expr": effective_expr,
+                "fromMs": start_ms,
+                "toMs": end_ms,
+                "stepMs": step_ms,
+                "vars": vars_map,
+            },
+            "result": payload,
+        }
+    except Exception as exc:
+        return {"ok": False, "source": "template", "errorType": type(exc).__name__, "error": str(exc)}
 
 
 if __name__ == "__main__":

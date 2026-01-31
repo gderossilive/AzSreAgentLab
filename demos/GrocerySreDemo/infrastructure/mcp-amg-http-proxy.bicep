@@ -82,6 +82,22 @@ resource mcpAmgProxyApp 'Microsoft.App/containerApps@2023-05-01' = {
               value: '90'
             }
             {
+              name: 'AMG_MCP_INIT_TIMEOUT_S'
+              value: '60'
+            }
+            {
+              name: 'AMG_MCP_TOOLS_LIST_TIMEOUT_S'
+              value: '60'
+            }
+            {
+              name: 'DISABLE_AMGMCP_AZURE_TOOLS'
+              value: 'true'
+            }
+            {
+              name: 'GRAFANA_RENDER_TIMEOUT_S'
+              value: '20'
+            }
+            {
               name: 'AZURE_CLIENT_ID'
               value: mcpAmgIdentity.properties.clientId
             }

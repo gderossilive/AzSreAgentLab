@@ -19,6 +19,7 @@ COPY --from=amg /usr/local/bin/amg-mcp /usr/local/bin/amg-mcp
 
 WORKDIR /app
 COPY demos/GrocerySreDemo/infrastructure/amg_mcp_http_proxy_server.py /app/server.py
+COPY demos/GrocerySreDemo/grafana/grocery-sre-overview.dashboard.template.json /app/grafana/grocery-sre-overview.dashboard.template.json
 
 EXPOSE 8000
 ENTRYPOINT ["python3", "/app/server.py"]
