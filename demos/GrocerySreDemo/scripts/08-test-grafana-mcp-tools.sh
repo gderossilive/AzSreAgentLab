@@ -24,6 +24,10 @@ Options:
   --resource-id <id>       Resource id for resource-log queries (optional; if required, tool will be skipped)
     --dashboard-uid <uid>     Grafana dashboard UID to use for dashboard summary + panel render
                                                         Default: afbppudwbhl34b
+    --amw-name <name>        Azure Monitor Workspace name (Microsoft.Monitor/accounts) for Prometheus query test
+                                                     Default: auto-detect first AMW in the demo resource group
+    --amw-query-endpoint <u> Azure Monitor Workspace Prometheus query endpoint
+                                                     Default: read from AMW properties.metrics.prometheusQueryEndpoint
   -h|--help                Show help
 
 Auto-detect behavior:
@@ -40,6 +44,8 @@ mcp_url="${MCP_URL:-${MCP_URL:-}}"
 subscription_id="${AZURE_SUBSCRIPTION_ID:-${SUBSCRIPTION_ID:-}}"
 resource_id=""
 dashboard_uid="afbppudwbhl34b"
+amw_name=""
+amw_query_endpoint=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -51,6 +57,10 @@ while [[ $# -gt 0 ]]; do
       resource_id="${2:-}"; shift 2 ;;
         --dashboard-uid)
             dashboard_uid="${2:-}"; shift 2 ;;
+        --amw-name)
+            amw_name="${2:-}"; shift 2 ;;
+        --amw-query-endpoint)
+            amw_query_endpoint="${2:-}"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -76,15 +86,32 @@ if [[ -z "$mcp_url" ]]; then
   fi
 fi
 
+# Best-effort resolve AMW Prometheus query endpoint for the Prometheus API test.
+if [[ -z "$amw_query_endpoint" ]]; then
+    if command -v az >/dev/null 2>&1 && [[ -f "$config_path" ]]; then
+        rg_name="$(python3 -c "import json; print(json.load(open('$config_path'))['ResourceGroupName'])" 2>/dev/null || true)"
+        if [[ -n "$rg_name" ]] && az account show >/dev/null 2>&1; then
+            if [[ -z "$amw_name" ]]; then
+                amw_name="$(az resource list -g "$rg_name" --resource-type Microsoft.Monitor/accounts --query "[0].name" -o tsv 2>/dev/null || true)"
+            fi
+            if [[ -n "$amw_name" ]]; then
+                amw_query_endpoint="$(az resource show -g "$rg_name" -n "$amw_name" --resource-type Microsoft.Monitor/accounts --query properties.metrics.prometheusQueryEndpoint -o tsv 2>/dev/null || true)"
+            fi
+        fi
+    fi
+fi
+
 if [[ -z "$mcp_url" ]]; then
   echo "Missing MCP endpoint. Provide --mcp-url or set MCP_URL." >&2
   exit 2
 fi
 
-python3 - "$mcp_url" "$subscription_id" "$resource_id" "$dashboard_uid" <<'PY'
+python3 - "$mcp_url" "$subscription_id" "$resource_id" "$dashboard_uid" "$amw_query_endpoint" <<'PY'
 import json
 import sys
 import time
+import subprocess
+import urllib.parse
 import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional, Tuple
@@ -93,6 +120,7 @@ mcp_url = sys.argv[1].rstrip('/')
 subscription_id = (sys.argv[2] or '').strip()
 resource_id = (sys.argv[3] or '').strip()
 dashboard_uid = (sys.argv[4] or '').strip()
+amw_query_endpoint = (sys.argv[5] or '').strip() if len(sys.argv) > 5 else ''
 
 
 def _now_ms() -> int:
@@ -146,6 +174,48 @@ def _short(obj: Any, limit: int = 700) -> str:
     return s
 
 
+def _az_access_token(resource: str) -> Optional[str]:
+    try:
+        out = subprocess.check_output(
+            [
+                'az',
+                'account',
+                'get-access-token',
+                '--resource',
+                resource,
+                '--query',
+                'accessToken',
+                '-o',
+                'tsv',
+            ],
+            stderr=subprocess.DEVNULL,
+        )
+        token = out.decode('utf-8').strip()
+        return token or None
+    except Exception:
+        return None
+
+
+def _prom_query(endpoint: str, expr: str) -> Tuple[int, Any]:
+    token = _az_access_token('https://prometheus.monitor.azure.com')
+    if not token:
+        return 0, {'_error': 'Unable to obtain Azure token (need az login + RBAC to query AMW)'}
+
+    base = endpoint.rstrip('/')
+    qs = urllib.parse.urlencode({'query': expr})
+    url = f"{base}/api/v1/query?{qs}"
+    status, _headers, payload = _http(
+        'GET',
+        url,
+        headers={
+            'accept': 'application/json',
+            'authorization': f'Bearer {token}',
+        },
+        timeout_s=30,
+    )
+    return status, _json_loads_maybe(payload)
+
+
 def _mcp_call(session_id: str, req_id: int, method: str, params: Dict[str, Any]) -> Tuple[bool, Any]:
     status, headers, payload = _http(
         'POST',
@@ -169,6 +239,9 @@ def _mcp_call(session_id: str, req_id: int, method: str, params: Dict[str, Any])
 failures = 0
 
 print(f"[INFO] MCP URL: {mcp_url}")
+
+if amw_query_endpoint:
+    print(f"[INFO] AMW Prometheus query endpoint: {amw_query_endpoint}")
 
 # Probe routes
 for path in ('/', '/healthz'):
@@ -495,6 +568,35 @@ for tool_name in sorted(by_name.keys()):
 
 # Best-effort session cleanup
 _http('DELETE', mcp_url, headers={'accept': 'application/json', 'mcp-session-id': session_id}, timeout_s=10)
+
+# Managed Prometheus ingestion verification (workspace-scoped query endpoint).
+# This checks the metrics we just deployed (Prometheus scraping + blackbox probe) are visible.
+if amw_query_endpoint:
+    prom_failures = 0
+    checks = [
+        ('up{job="ca-api"}', 'Expect ca-api scrape target up'),
+        ('probe_success{job="blackbox-http"}', 'Expect ca-web probe success'),
+    ]
+    for expr, hint in checks:
+        status, obj = _prom_query(amw_query_endpoint, expr)
+        ok = False
+        if status == 200 and isinstance(obj, dict):
+            data = obj.get('data')
+            if isinstance(data, dict):
+                result = data.get('result')
+                if isinstance(result, list) and len(result) > 0:
+                    ok = True
+
+        if ok:
+            print(f"[OK]  promql {expr} -> {status} results={len(obj.get('data', {}).get('result', []))}")
+        else:
+            prom_failures += 1
+            print(f"[FAIL] promql {expr} -> {status} {hint} resp={_short(obj)}")
+            print("[INFO] If you just granted RBAC for remote_write, it can take ~30 minutes to propagate.")
+
+    failures += prom_failures
+else:
+    print("[SKIP] Prometheus query test: missing AMW query endpoint (pass --amw-query-endpoint or --amw-name, or ensure demo-config + az login)")
 
 if failures:
     print(f"[RESULT] FAIL ({failures} tool call(s) failed)")
