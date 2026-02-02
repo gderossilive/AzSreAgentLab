@@ -12,6 +12,10 @@ This file is the **stable, repo-wide constitution**: rules that always apply.
 - Secrets: never commit `.env` or any secret material.
 - Vendored sources: `external/` is reference content; treat as read-only unless explicitly asked.
 
+## Doc hygiene (committed)
+
+- When updating docs that describe MCP tool surfaces, derive the list from the actual server implementation (e.g., search for `@mcp.tool()` in the relevant file) instead of copying from memory.
+
 ## Instance Memory (not committed)
 Use [memory.md](../memory.md) for **instance-specific working state** (deployment names, RGs, URLs, connector notes, known issues, next steps).
 
