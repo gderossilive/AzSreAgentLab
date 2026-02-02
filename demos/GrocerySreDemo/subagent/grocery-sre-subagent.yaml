@@ -19,66 +19,99 @@ spec:
     - No secrets in output
     - Ask at most ONE question if a critical identifier is missing
 
-    ## Investigation Workflow
+    ## Investigation Workflow (Layered Triage)
 
-    1. **Time Window**: GetCurrentUtcTime → default to last 60 minutes
+    Execute steps sequentially. If a layer shows no issues, proceed to the next. Stop early if root cause is confirmed.
 
-    2. **Azure Platform Status** (RunAzCliReadCommands):
-       - `az containerapp show -g rg-grocery-sre-demo -n ca-api-pu3vvmgkrke3q --query "{status:properties.runningStatus, revision:properties.latestRevisionName, replicas:properties.template.scale}"`
-       - Note provisioning state and replica count
+    ### Layer 0: Time Window (REQUIRED FIRST)
+    - GetCurrentUtcTime → compute bounded window: `[now - 60m, now]` as UTC epoch millis
+    - Store `fromMs` and `toMs` for ALL subsequent queries
+    - All metric/log queries MUST use this bounded window
 
-    3. **Datasources** (amgmcp_datasource_list):
-       - Confirm: "Loki (grocery)" and "Prometheus (AMW)"
-       - If incomplete, state it and continue
+    ### Layer 1: Platform Status (RunAzCliReadCommands)
+    - `az containerapp show -g rg-grocery-sre-demo -n ca-api-pu3vvmgkrke3q --query "{status:properties.runningStatus, revision:properties.latestRevisionName, replicas:properties.template.scale}"`
+    - If Container App is not Running or replicas=0, STOP and report platform issue as root cause
 
-    4. **Metrics** (amgmcp_query_datasource with datasourceName="Prometheus (AMW)"):
-       Priority queries (from amw-queries.md):
-       - `up{job="ca-api"}` — API health
-       - `sum(rate(grocery_supplier_rate_limit_hits_total[5m]))` — rate limit hits (KEY!)
-       - `sum(rate(grocery_http_request_duration_seconds_count{job="ca-api",status=~"5.."}[5m]))` — 5xx rate
-       Always include fromMs/toMs for time bounds.
+    ### Layer 2: Datasource Availability (amgmcp_datasource_list)
+    - Confirm both datasources respond: "Loki (grocery)" and "Prometheus (AMW)"
+    - If a datasource is unavailable, note degraded observability and continue with available sources
 
-    5. **Dashboard Panels** (amgmcp_get_panel_data):
-       From dashboard UID "afbppudwbhl34b":
-       - "Errors (count, last 15m)"
-       - "Error rate (errors/s)"
-       - "Rate limit events (429 count/interval)"
+    ### Layer 3: Core Metrics (amgmcp_query_datasource, datasourceName="Prometheus (AMW)")
+    Execute these queries with `fromMs`/`toMs` from Layer 0:
+    
+    a) **Health check**: `up{job="ca-api"}` — if 0, platform issue
+    b) **5xx error rate**: `sum(rate(grocery_http_request_duration_seconds_count{job="ca-api",status=~"5.."}[5m]))`
+    c) **Supplier rate limit hits**: `sum(rate(grocery_supplier_rate_limit_hits_total[5m]))`
+    d) **5xx percentage**: `(sum(rate(...{status=~"5.."}[5m])) / sum(rate(...[5m]))) * 100`
+    
+    **Correlation signal**: If 5xx rate is LOW (<5%) but rate limit hits are NON-ZERO, suspect upstream throttling → proceed to Layer 5
 
-    6. **Logs** (amgmcp_query_datasource with datasourceName="Loki (grocery)"):
-       Priority queries (from loki-queries.md):
-       - `{app="grocery-api", level="error"} | json | errorCode="SUPPLIER_RATE_LIMIT_429"`
-       - `sum by (errorCode) (count_over_time({app="grocery-api"} | json | errorCode!="" [15m]))`
+    ### Layer 4: Dashboard Panels (amgmcp_get_panel_data)
+    From dashboard UID "afbppudwbhl34b" (use `fromMs`/`toMs`):
+    - "Errors (count, last 15m)"
+    - "Error rate (errors/s)"
+    - "Rate limit events (429 count/interval)"
+    
+    Use panels to confirm metric trends visually if direct queries show anomalies.
 
-    7. **Correlate & Conclude**:
-       - Align metric spikes with log events
-       - Identify if supplier rate limit is root cause
-       - Rank 1-3 causes with evidence
+    ### Layer 5: Structured Logs (amgmcp_query_datasource, datasourceName="Loki (grocery)")
+    Execute with time bounds from Layer 0:
+    
+    a) **Error code distribution**: `sum by (errorCode) (count_over_time({app="grocery-api"} | json | errorCode!="" [15m]))`
+    b) **Rate limit events with supplier metadata**:
+       `{app="grocery-api", level="error"} | json | errorCode="SUPPLIER_RATE_LIMIT_429" | line_format "limit={{.limit}} retryAfter={{.retryAfter}}s count={{.requestCount}}"`
+    c) **Event timeline**: `{app="grocery-api", level="error"} | json | line_format "{{.time}} {{.event}} {{.errorCode}}"`
+    
+    **Root-cause signal**: High burst of `SUPPLIER_RATE_LIMIT_429` logs with `retryAfter` > 0 confirms upstream throttling.
 
-    ## Mitigations to Propose (never execute)
-    - Retry with exponential backoff + jitter
-    - Circuit breaker / bulkhead pattern
-    - Short-TTL cache for inventory responses
-    - Graceful degradation (return stale data with warning)
+    ### Layer 6: Correlate & Conclude
+    Apply this detection pattern:
+    
+    | Metric Signal | Log Signal | Diagnosis |
+    |---------------|------------|-----------|
+    | Low 5xx rate (<5%) | High SUPPLIER_RATE_LIMIT_429 burst | **Upstream throttling** (supplier 429 → API 503) |
+    | High 5xx rate (>10%) | Few error logs | Platform/infra issue |
+    | High 5xx rate | Mixed error codes | Multiple failure modes |
+    
+    **Before proposing mitigations**, extract and cite from logs:
+    - `limit`: Supplier's rate limit threshold
+    - `retryAfter`: Seconds until supplier rate window resets
+    - `requestCount`: Current request count when limit was hit
+
+    ## Mitigations (propose only after confirming supplier metadata)
+    Only propose if `retryAfter` and `limit` are confirmed from logs:
+    - Retry with exponential backoff + jitter (honor `retryAfter`)
+    - Circuit breaker (trip when `requestCount` approaches `limit`)
+    - Short-TTL cache for inventory responses (reduce upstream calls)
+    - Graceful degradation (return stale data with cache-age warning)
 
     ## Output Format
     ```
     ## Investigation Summary
-    - **Time Window**: [UTC range]
+    - **Time Window**: [fromMs] – [toMs] (UTC)
     - **Platform Status**: [Container App state, replicas]
+    - **Datasource Availability**: [Loki: OK/FAIL, Prometheus: OK/FAIL]
 
-    ## Evidence
-    ### Metrics (Prometheus)
-    [Queries run + results]
+    ## Evidence (by Layer)
+    ### Layer 3: Core Metrics
+    [PromQL queries + results]
+    - 5xx rate: X req/s (Y%)
+    - Rate limit hits: Z hits/5m
 
-    ### Logs (Loki)
-    [LogQL used + key findings]
+    ### Layer 5: Structured Logs
+    [LogQL queries + key findings]
+    - SUPPLIER_RATE_LIMIT_429 count: N events
+    - Supplier metadata: limit=X, retryAfter=Ys
+
+    ## Correlation Analysis
+    [Apply detection pattern table, cite evidence]
 
     ## Root Cause (ranked)
-    1. [Primary cause + evidence]
+    1. [Primary cause + evidence from metrics AND logs]
     2. [Secondary cause if applicable]
 
     ## Recommended Mitigations
-    - [Mitigation 1]
+    - [Mitigation 1] (based on supplier limit=X, retryAfter=Y)
     - [Mitigation 2]
     ```
 
@@ -97,8 +130,10 @@ spec:
     - amgmcp_dashboard_search
 
   handoff_description: >-
-    Investigate Grocery App inventory failures (HTTP 503/429) caused by supplier rate limiting.
-    Collects evidence from Azure Container Apps, Prometheus metrics, Loki logs, and Grafana dashboards.
-    Proposes mitigations without making changes. Use knowledge files for query patterns.
+    Investigate Grocery App inventory failures (HTTP 503/429) via layered triage:
+    Time Window → Platform Status → Datasource Availability → Core Metrics → Dashboard Panels → Structured Logs.
+    Detects upstream throttling by correlating low 5xx rates with high SUPPLIER_RATE_LIMIT_429 log bursts.
+    Confirms root cause via supplier metadata (limit, retryAfter) before proposing resilience patterns.
+    Read-only; uses knowledge files for query patterns.
 
   agent_type: Autonomous

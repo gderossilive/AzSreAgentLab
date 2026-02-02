@@ -292,9 +292,49 @@ This deploys `ca-mcp-grafana` with external ingress and prints the MCP endpoint:
 - `https://<fqdn>/mcp`
 - Transport: `streamable-http`
 
+## Subagents
+
+The `subagent/` folder contains YAML definitions for specialized SRE Agent subagents that can be registered with the Azure SRE Agent.
+
+### GrocerySreDemoInvestigator (`grocery-sre-subagent.yaml`)
+
+Primary investigator for the Grocery App demo scenario. Diagnoses intermittent HTTP 503 errors caused by upstream supplier rate limiting.
+
+**Capabilities:**
+- Queries Azure Container Apps status via Azure CLI
+- Queries Prometheus (AMW) metrics for RED signals and rate limit hits
+- Queries Loki logs for `SUPPLIER_RATE_LIMIT_429` error patterns
+- Retrieves Grafana dashboard panel data for visualization
+
+**Tools used:** `GetCurrentUtcTime`, `RunAzCliReadCommands`, `SearchMemory`, `amgmcp_datasource_list`, `amgmcp_query_datasource`, `amgmcp_get_panel_data`, `amgmcp_image_render`
+
+### ImagePatchManagement (`image-patch-management-subagent.yaml`)
+
+Proactively scans for vulnerabilities in container images (ACR) and virtual machines, then posts findings to a Teams channel.
+
+**Capabilities:**
+- Lists container registries and queries Defender for Containers vulnerability assessments
+- Lists VMs and queries Defender for Servers vulnerability assessments
+- Uses Azure Resource Graph for cross-subscription vulnerability queries
+- Posts formatted Adaptive Cards to Teams with severity summaries and remediation guidance
+
+**Tools used:** `GetCurrentUtcTime`, `RunAzCliReadCommands`, `SendTeamsMessage`
+
+### SreAdvisor (`sre-advisor-subagent.yaml`)
+
+Analyzes ALL high-impact Azure Advisor recommendations across Cost, Security, Reliability, Operational Excellence, and Performance categories.
+
+**Capabilities:**
+- Queries Azure Advisor for high-impact recommendations across all 5 categories
+- Groups and prioritizes findings by category and impact
+- Provides actionable remediation steps without making changes (read-only)
+
+**Tools used:** `GetCurrentUtcTime`, `RunAzCliReadCommands`, `GetArmResourceAsJson`, `SearchMemory`
+
 ## Files
 
 - Infrastructure: `infrastructure/main.bicep`
 - Generated config (no secrets): `demo-config.json`
 - Scripts: `scripts/`
+- Subagents: `subagent/`
 
