@@ -1,12 +1,19 @@
 {
   "name": "grocery-web",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Grocery Store Frontend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.21.2"
+  },
+  "overrides": {
+    "tar": "^7.5.7",
+    "glob": "^10.5.0",
+    "cross-spawn": "^7.0.5",
+    "diff": "^5.2.2",
+    "brace-expansion": "^2.0.2"
   }
 }
