@@ -432,10 +432,37 @@ def run_tool(name: str, args: Dict[str, Any], req_id: int) -> Tuple[bool, Any]:
     else:
         tool_err = resp
 
+    def _sc_from_resp(r: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(r, dict):
+            return None
+        result = r.get('result')
+        if not isinstance(result, dict):
+            return None
+        sc = result.get('structuredContent')
+        return sc if isinstance(sc, dict) else None
+
+    def _summarize_tool(r: Any) -> str:
+        sc = _sc_from_resp(r)
+        if not sc:
+            return ''
+        parts = []
+        src = sc.get('source')
+        if isinstance(src, str) and src.strip():
+            parts.append(f"source={src}")
+        if name == 'amgmcp_datasource_list':
+            dss = sc.get('datasources')
+            if isinstance(dss, list):
+                parts.append(f"datasources={len(dss)}")
+        if name == 'amgmcp_query_datasource':
+            ds_uid = sc.get('datasourceUid') or sc.get('datasourceUID')
+            if isinstance(ds_uid, str) and ds_uid.strip():
+                parts.append(f"datasourceUid={ds_uid}")
+        return (" " + " ".join(parts)) if parts else ''
+
     if tool_ok:
-        print(f"[OK]  {name} dt={dt2:.2f}s args={_short(args, 200)}")
+        print(f"[OK]  {name} dt={dt2:.2f}s args={_short(args, 200)}{_summarize_tool(resp)}")
     else:
-        print(f"[FAIL] {name} dt={dt2:.2f}s args={_short(args, 200)} resp={_short(tool_err)}")
+        print(f"[FAIL] {name} dt={dt2:.2f}s args={_short(args, 200)} resp={_short(tool_err)}{_summarize_tool(resp)}")
     return tool_ok, resp
 
 
@@ -447,6 +474,13 @@ if 'amgmcp_datasource_list' in by_name:
     req_id += 1
     results_cache['amgmcp_datasource_list'] = resp
     if not ok2:
+        failures += 1
+
+    # Run datasource_list twice to show cache behavior and confirm stable source.
+    ok3, resp2 = run_tool('amgmcp_datasource_list', {}, req_id)
+    req_id += 1
+    results_cache['amgmcp_datasource_list_2'] = resp2
+    if not ok3:
         failures += 1
 
 
@@ -475,10 +509,48 @@ def _has_datasource_named(ds_resp: Any, name: str) -> bool:
     return False
 
 
+def _datasource_list_source(ds_resp: Any) -> Optional[str]:
+    if not isinstance(ds_resp, dict):
+        return None
+    result = ds_resp.get('result')
+    if not isinstance(result, dict):
+        return None
+    sc = result.get('structuredContent')
+    if not isinstance(sc, dict):
+        return None
+    src = sc.get('source')
+    return src if isinstance(src, str) and src.strip() else None
+
+
+def _datasource_names(ds_resp: Any) -> list[str]:
+    out: list[str] = []
+    if not isinstance(ds_resp, dict):
+        return out
+    result = ds_resp.get('result')
+    if isinstance(result, dict):
+        sc = result.get('structuredContent')
+        if isinstance(sc, dict):
+            dss = sc.get('datasources')
+            if isinstance(dss, list):
+                for ds in dss:
+                    if isinstance(ds, dict):
+                        n = ds.get('name')
+                        if isinstance(n, str) and n.strip():
+                            out.append(n)
+    return out
+
+
 # 1b) Prometheus datasource query via Grafana MCP (tests the Grafana datasource wiring)
 # Note: datasource discovery can legitimately fall back to a Loki-only list; don't gate on it.
 if 'amgmcp_query_datasource' in by_name:
     if prometheus_datasource_name:
+        ds_src = _datasource_list_source(results_cache.get('amgmcp_datasource_list') or {})
+        ds_names = _datasource_names(results_cache.get('amgmcp_datasource_list') or {})
+        if ds_src:
+            print(f"[INFO] datasource_list source: {ds_src}")
+        if ds_names:
+            print(f"[INFO] datasource_list names: {', '.join(ds_names)}")
+
         end_ms = _now_ms()
         start_ms = end_ms - 15 * 60 * 1000
         ok2, resp = run_tool(
@@ -532,6 +604,33 @@ if 'amgmcp_get_panel_data' in by_name:
     req_id += 1
     results_cache['amgmcp_get_panel_data'] = resp
     if not ok2:
+        failures += 1
+
+    # 2d) another time series panel sanity check (request rate)
+    ok3 = False
+    resp3: Any = None
+    for candidate in (
+        'Requests/sec (API)',
+        'Requests/sec',
+        'Requests / sec',
+    ):
+        ok3, resp3 = run_tool(
+            'amgmcp_get_panel_data',
+            {
+                'dashboardUid': dashboard_uid,
+                'panelTitle': candidate,
+                'fromMs': start_ms,
+                'toMs': end_ms,
+                'stepMs': 30_000,
+            },
+            req_id,
+        )
+        req_id += 1
+        if ok3:
+            results_cache['amgmcp_get_panel_data_requests_per_sec'] = resp3
+            break
+
+    if not ok3:
         failures += 1
 
 # 3) subscription list

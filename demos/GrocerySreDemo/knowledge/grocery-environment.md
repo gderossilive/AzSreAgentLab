@@ -93,6 +93,11 @@ curl -sS -i -X POST "$MCP_URL" \
 - Metrics (Prometheus) are stored in an Azure Monitor Workspace (Managed Prometheus) and are queried in Grafana using PromQL (via the `Prometheus (AMW)` datasource).
 - Dashboards are published in Managed Grafana for service overview and drill-down (the custom Overview dashboard mixes Loki + Prometheus/AMW panels).
 
+When using the MI HTTP MCP proxy (`ca-mcp-amg-proxy`), panel data retrieval via `amgmcp_get_panel_data` detects the panel datasource from the baked-in dashboard template and routes:
+
+- Loki panels to Loki `query_range` (direct)
+- Prometheus panels to AMW (direct) or Grafana datasource proxy (when a datasource UID is available)
+
 ## Alerts
 
 - Scheduled Query Rule: **Grocery API - Supplier rate limit (SUPPLIER_RATE_LIMIT_429)** (created 2026-01-30)

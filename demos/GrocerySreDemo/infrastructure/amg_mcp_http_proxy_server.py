@@ -574,10 +574,10 @@ def _template_find_panel_query(
     uid: str,
     panel_title: str,
     ref_id: str = "A",
-) -> tuple[dict[str, Any], str]:
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
     """Find the first query expression for a panel title in the baked-in template.
 
-    Returns (panel_summary, expr).
+    Returns (panel_summary, expr, datasource).
     """
     path = _template_path_for_dashboard_uid(uid)
     if path is None:
@@ -625,12 +625,18 @@ def _template_find_panel_query(
         if not isinstance(expr, str) or not expr.strip():
             raise ValueError(f"Panel '{panel_title}' target has no expr")
 
+        datasource = chosen.get("datasource")
+        if not isinstance(datasource, dict):
+            datasource = panel.get("datasource")
+        if not isinstance(datasource, dict):
+            datasource = {}
+
         panel_summary = {
             "panelIndex": idx,
             "title": title,
             "type": panel.get("type"),
         }
-        return panel_summary, expr
+        return panel_summary, expr, datasource
 
     raise KeyError(f"Panel titled '{panel_title}' not found in template")
 
@@ -1948,22 +1954,24 @@ async def amgmcp_get_panel_data(
     """Retrieve the data behind a dashboard panel (no image rendering).
 
     For the Grocery demo dashboard, this tool reads the baked-in dashboard template,
-    extracts the panel's Loki query (e.g., "Error rate (errors/s)"), applies default
-    templating variables (like $app), applies optional per-call overrides, and runs
-    Loki `query_range` directly.
+    extracts the panel query, applies default templating variables (like $app) plus
+    optional per-call overrides, then executes the query against the panel's datasource.
 
     Notes:
-    - Requires LOKI_ENDPOINT to be configured in the proxy.
-    - Uses a reasonable default step if none is provided.
+        - Loki panels require LOKI_ENDPOINT to be configured in the proxy.
+        - Prometheus panels are executed via Grafana's datasource proxy when possible
+          (requires PROMETHEUS_DATASOURCE_UID or a datasource UID in the dashboard template),
+          otherwise via AMW direct query if AMW_QUERY_ENDPOINT is configured.
+        - Uses a reasonable default step if none is provided.
         - To override Grafana template variables without editing the dashboard template,
-            pass either `app` (convenience for `$app`) and/or `templateVars`.
+          pass either `app` (convenience for `$app`) and/or `templateVars`.
     """
 
-    the_uid = (dashboardUid if dashboardUid is not None else uid) or _env_str(
+    dashboard_uid = (dashboardUid if dashboardUid is not None else uid) or _env_str(
         "DEFAULT_GROCERY_SRE_DASHBOARD_UID", "afbppudwbhl34b"
     )
-    the_uid = str(the_uid or "").strip()
-    if not the_uid:
+    dashboard_uid = str(dashboard_uid or "").strip()
+    if not dashboard_uid:
         return {"ok": False, "source": "template", "errorType": "ValueError", "error": "dashboardUid is required"}
 
     title = str(panelTitle or "").strip()
@@ -1991,32 +1999,95 @@ async def amgmcp_get_panel_data(
             if key and val:
                 overrides[key] = val
 
-    if not _loki_endpoint():
-        return {"ok": False, "source": "loki-direct", "errorType": "RuntimeError", "error": "LOKI_ENDPOINT is not set"}
-
     # Default time window: last 60m.
     now_ms = int(time.time() * 1000)
     end_ms = int(toMs) if toMs is not None else now_ms
     start_ms = int(fromMs) if fromMs is not None else end_ms - 60 * 60 * 1000
     if end_ms <= start_ms:
-        return {"ok": False, "source": "loki-direct", "errorType": "ValueError", "error": "toMs must be > fromMs"}
+        return {"ok": False, "source": "template", "errorType": "ValueError", "error": "toMs must be > fromMs"}
 
     # Default step: 30s.
     step_ms = int(stepMs) if stepMs is not None else 30_000
     if step_ms <= 0:
-        return {"ok": False, "source": "loki-direct", "errorType": "ValueError", "error": "stepMs must be > 0"}
+        return {"ok": False, "source": "template", "errorType": "ValueError", "error": "stepMs must be > 0"}
 
     try:
-        panel_summary, expr = await asyncio.to_thread(
+        panel_summary, expr, datasource = await asyncio.to_thread(
             _template_find_panel_query,
-            uid=the_uid,
+            uid=dashboard_uid,
             panel_title=title,
             ref_id="A",
         )
-        vars_map = await asyncio.to_thread(_template_extract_default_vars, the_uid)
+        vars_map = await asyncio.to_thread(_template_extract_default_vars, dashboard_uid)
         vars_map.update(_derive_grafana_macro_vars(start_ms=start_ms, end_ms=end_ms, step_ms=step_ms))
         vars_map.update(overrides)
         effective_expr = _apply_template_vars(expr, vars_map)
+
+        ds_type = str((datasource or {}).get("type") or "").strip().lower()
+        ds_uid_raw = (datasource or {}).get("uid")
+        ds_uid = _apply_template_vars(str(ds_uid_raw), vars_map).strip() if ds_uid_raw is not None else ""
+        if ds_uid.startswith("__") and ds_uid.endswith("__"):
+            # Dashboard template placeholders like __PROM_UID__ should not override
+            # env-based datasource UIDs.
+            ds_uid = ""
+
+        # Prometheus panels: prefer Grafana datasource proxy (server-side auth), then AMW direct.
+        if "prometheus" in ds_type or _looks_like_prometheus_datasource(str((datasource or {}).get("name") or "")):
+            prom_ds_uid = ds_uid or _prometheus_datasource_uid()
+            proxy_err: Optional[dict[str, str]] = None
+            if prom_ds_uid:
+                try:
+                    payload = await asyncio.to_thread(
+                        _grafana_promql_query_range_via_datasource_proxy,
+                        datasource_uid=str(prom_ds_uid),
+                        expr=str(effective_expr),
+                        start_ms=int(start_ms),
+                        end_ms=int(end_ms),
+                        step_s=max(1, int(step_ms / 1000)),
+                    )
+                    return {
+                        "ok": True,
+                        "source": "grafana-datasource-proxy",
+                        "dashboardUid": dashboard_uid,
+                        "panel": panel_summary,
+                        "datasource": {"type": ds_type or "prometheus", "uid": str(prom_ds_uid)},
+                        "query": {"expr": effective_expr, "fromMs": start_ms, "toMs": end_ms, "stepMs": step_ms, "vars": vars_map},
+                        "result": payload,
+                    }
+                except Exception as exc:
+                    proxy_err = {"errorType": type(exc).__name__, "error": str(exc)}
+
+            if _amw_query_endpoint():
+                payload = await asyncio.to_thread(
+                    _amw_promql_query_range,
+                    endpoint=_amw_query_endpoint(),
+                    expr=str(effective_expr),
+                    start_ms=int(start_ms),
+                    end_ms=int(end_ms),
+                    step_s=max(1, int(step_ms / 1000)),
+                )
+                return {
+                    "ok": True,
+                    "source": "amw-direct",
+                    "dashboardUid": dashboard_uid,
+                    "panel": panel_summary,
+                    "datasource": {"type": ds_type or "prometheus", "uid": ds_uid or None},
+                    "query": {"expr": effective_expr, "fromMs": start_ms, "toMs": end_ms, "stepMs": step_ms, "vars": vars_map},
+                    "grafanaProxy": proxy_err,
+                    "result": payload,
+                }
+
+            return {
+                "ok": False,
+                "source": "prometheus",
+                "errorType": "RuntimeError",
+                "error": "Prometheus panel query failed (no usable datasource UID and AMW_QUERY_ENDPOINT not set)",
+                "grafanaProxy": proxy_err,
+            }
+
+        # Loki panels: direct query_range against Loki.
+        if not _loki_endpoint():
+            return {"ok": False, "source": "loki-direct", "errorType": "RuntimeError", "error": "LOKI_ENDPOINT is not set"}
 
         payload = await asyncio.to_thread(
             _loki_query_range,
@@ -2030,8 +2101,9 @@ async def amgmcp_get_panel_data(
         return {
             "ok": True,
             "source": "loki-direct",
-            "dashboardUid": the_uid,
+            "dashboardUid": dashboard_uid,
             "panel": panel_summary,
+            "datasource": {"type": ds_type or "loki", "uid": ds_uid or None},
             "query": {
                 "expr": effective_expr,
                 "fromMs": start_ms,

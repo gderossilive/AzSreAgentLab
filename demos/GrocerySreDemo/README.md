@@ -235,12 +235,15 @@ az containerapp show -g rg-grocery-sre-demo -n ca-mcp-amg-proxy --query properti
 The MI-based HTTP proxy intentionally exposes a small, investigation-focused MCP tool surface:
 
 - `amgmcp_datasource_list`
-- `amgmcp_query_datasource` (commonly used for Loki queries)
+- `amgmcp_query_datasource` (Loki queries and PromQL via AMW/direct)
 - `amgmcp_dashboard_search`
+- `amgmcp_get_dashboard_summary`
+- `amgmcp_get_panel_data` (supports both Loki + Prometheus panels from the baked-in template)
 - `amgmcp_image_render`
-- `amgmcp_query_resource_log`
-- `amgmcp_query_resource_graph`
-- `amgmcp_query_azure_subscriptions`
+
+Optional (disabled by default):
+
+- `amgmcp_query_azure_subscriptions` (only when `DISABLE_AMGMCP_AZURE_TOOLS=false`)
 
 It does NOT expose dashboard download/upload or system backup/restore tools.
 
@@ -263,6 +266,11 @@ cd demos/GrocerySreDemo
 ```
 
 This test initializes an MCP session, lists tools, and calls each tool with safe arguments (including `amgmcp_image_render` against the configured dashboard UID).
+
+`amgmcp_get_panel_data` is also exercised to validate both:
+
+- Loki panel data (example: `Error rate (errors/s)`)
+- Prometheus panel data (example: `Requests/sec (API)`)
 
 ### Deploy Grafana MCP server (HTTP/streamable, connectable from MCP clients)
 
