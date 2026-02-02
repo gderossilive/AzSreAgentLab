@@ -46,6 +46,21 @@ echo "https://$fqdn/mcp"
 
 This endpoint authenticates to Azure Managed Grafana using managed identity (Grafana Viewer/Editor RBAC on the Grafana resource).
 
+### Troubleshooting: agent says “only Loki datasource” / “no dashboards found”
+
+If an agent reports that Prometheus/AMW or dashboards are missing, it is usually one of these:
+
+- **Wrong connector URL**: The Azure SRE Agent connector URL must be the MCP proxy endpoint `https://<ca-mcp-amg-proxy-fqdn>/mcp`.
+  Do **not** use the Azure Managed Grafana UI endpoint (`https://<name>.cse.grafana.azure.com`) as the connector URL.
+- **Proxy not deployed / wrong proxy**: Ensure `ca-mcp-amg-proxy` exists and is the endpoint you configured.
+
+Recommended check (runs only safe/read-only MCP tool calls):
+
+```bash
+cd demos/GrocerySreDemo
+./scripts/08-test-grafana-mcp-tools.sh --mcp-url https://<fqdn>/mcp
+```
+
 ### Notes for MCP clients / connector validators
 
 The proxy is intentionally tolerant of “validator-style” traffic:
@@ -75,7 +90,8 @@ curl -sS -i -X POST "$MCP_URL" \
 ## Observability notes
 
 - Logs are queryable in Loki. The primary app label used in queries is typically `app="grocery-api"`.
-- Dashboards are published in Managed Grafana for service overview and drill-down.
+- Metrics (Prometheus) are stored in an Azure Monitor Workspace (Managed Prometheus) and are queried in Grafana using PromQL (via the `Prometheus (AMW)` datasource).
+- Dashboards are published in Managed Grafana for service overview and drill-down (the custom Overview dashboard mixes Loki + Prometheus/AMW panels).
 
 ## Alerts
 

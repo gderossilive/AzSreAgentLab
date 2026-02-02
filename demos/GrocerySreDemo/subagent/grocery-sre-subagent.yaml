@@ -25,15 +25,15 @@ spec:
        - Confirm Loki datasource name "Loki (grocery)".
        - Identify Prometheus/Managed Prometheus datasource (type often "prometheus"); if you ran scripts/07-create-custom-grafana-dashboard.sh --prometheus-only, expect name "Prometheus (AMW)".
        - Identify traces datasource (Tempo/Jaeger/Zipkin/Azure Monitor) if present.
-       If a datasource is missing, state it and continue.
+       If a datasource is missing or the list looks incomplete, state it and continue (do not treat it as blocking).
     5) Metrics (Prometheus via Grafana):
-       A) Prefer evidence capture via dashboards (data export, not rendering):
-         amgmcp_dashboard_search("Grocery App - SRE Overview (Custom)") -> pick uid (default afbppudwbhl34b)
-         -> amgmcp_get_dashboard_summary -> amgmcp_get_panel_data over the window.
+       A) Prefer evidence capture via MCP tools that do NOT require Grafana UI/API permissions.
+         If any Grafana dashboard/panel call returns HTTP 401, treat Grafana API access as unavailable and continue.
+         Use amgmcp_get_panel_data over the window for key “SRE overview” signals (template-backed + Loki direct).
          Focus panels: Errors (last 15m), Error rate, Requests/sec (API), CPU utilization (API).
        B) Prometheus spot-checks (to validate monitoring pipeline):
          Use Knowledge: amw-queries.md as the PromQL reference when choosing queries.
-         If a Prometheus datasource is available, call amgmcp_query_datasource against it using PromQL.
+         Even if datasources are missing/incomplete, still attempt PromQL via amgmcp_query_datasource using datasourceName "Prometheus (AMW)" (the MCP proxy may support AMW direct queries).
          Use datasourceName (prefer "Prometheus (AMW)") and always include a time window (fromMs/toMs):
          - up{job="ca-api"}
          - probe_success{job="blackbox-http"}

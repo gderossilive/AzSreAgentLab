@@ -44,6 +44,9 @@ location="$(python3 -c "import json; print(json.load(open('$config_path'))['Loca
 az account show >/dev/null 2>&1 || die "Azure CLI not logged in. Run: az login"
 az account set --subscription "$subscription_id" >/dev/null
 
+log_step "Ensuring Azure Managed Grafana CLI extension is available"
+az extension add --name amg --upgrade --only-show-errors >/dev/null || true
+
 log_step "Resolving Container Apps environment ID"
 environment_id="$(az containerapp env show -g "$rg_name" -n "$cae_name" --query id -o tsv)"
 [[ -n "$environment_id" ]] || die "Unable to resolve environmentId for $cae_name"
@@ -78,21 +81,54 @@ fi
 
 # Optional AMW Prometheus direct query fallback: discover AMW query endpoint if present.
 amw_query_endpoint=""
-amw_name="$(az resource list -g "$rg_name" --resource-type Microsoft.Monitor/accounts --query "[0].name" -o tsv 2>/dev/null || true)"
-if [[ -n "$amw_name" ]]; then
-  amw_query_endpoint="$(az resource show -g "$rg_name" -n "$amw_name" --resource-type Microsoft.Monitor/accounts --query properties.metrics.prometheusQueryEndpoint -o tsv 2>/dev/null || true)"
-  if [[ -n "$amw_query_endpoint" ]]; then
-    amw_query_endpoint="${amw_query_endpoint%/}"
-    log_info "Detected AMW Prometheus query endpoint: $amw_query_endpoint"
-  fi
+amw_name=""
+amw_names="$(az resource list -g "$rg_name" --resource-type Microsoft.Monitor/accounts --query "[].name" -o tsv 2>/dev/null || true)"
+if [[ -n "$amw_names" ]]; then
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    candidate_endpoint="$(az resource show -g "$rg_name" -n "$candidate" --resource-type Microsoft.Monitor/accounts --query properties.metrics.prometheusQueryEndpoint -o tsv 2>/dev/null || true)"
+    if [[ -n "$candidate_endpoint" ]]; then
+      amw_name="$candidate"
+      amw_query_endpoint="${candidate_endpoint%/}"
+      log_info "Detected AMW Prometheus query endpoint: $amw_query_endpoint"
+      break
+    fi
+  done <<< "$amw_names"
 fi
 
 # Optional Prometheus datasource UID: used for Grafana datasource-proxy queries.
 prometheus_datasource_name="Prometheus (AMW)"
 prometheus_datasource_uid=""
-prometheus_datasource_uid="$(az grafana data-source list -g "$rg_name" -n "$grafana_name" --query "[?name=='$prometheus_datasource_name'].uid | [0]" -o tsv 2>/dev/null || true)"
+
+resolve_prometheus_uid() {
+  local uid
+  uid="$(az grafana data-source list -g "$rg_name" -n "$grafana_name" --query "[?name=='$prometheus_datasource_name'].uid | [0]" -o tsv 2>/dev/null || true)"
+  if [[ -z "$uid" && -n "${amw_query_endpoint:-}" ]]; then
+    uid="$(az grafana data-source list -g "$rg_name" -n "$grafana_name" --query "[?type=='prometheus' && url=='${amw_query_endpoint}'].uid | [0]" -o tsv 2>/dev/null || true)"
+  fi
+  echo "$uid"
+}
+
+prometheus_datasource_uid="$(resolve_prometheus_uid)"
+
+# If we detected AMW but the Prometheus datasource isn't present (or UID lookup failed),
+# create/update it via the dedicated script so the MCP proxy can use Grafana's datasource
+# proxy fast path without depending on AMW direct queries.
+if [[ -z "$prometheus_datasource_uid" && -n "${amw_query_endpoint:-}" ]]; then
+  log_step "Ensuring Prometheus (AMW) datasource exists in Managed Grafana"
+  "$demo_root/scripts/07-create-custom-grafana-dashboard.sh" \
+    --prometheus-only \
+    --prometheus-datasource-name "$prometheus_datasource_name" \
+    ${amw_name:+--amw-name "$amw_name"} \
+    --amw-query-endpoint "$amw_query_endpoint"
+
+  prometheus_datasource_uid="$(resolve_prometheus_uid)"
+fi
+
 if [[ -n "$prometheus_datasource_uid" ]]; then
   log_info "Detected Grafana Prometheus datasource UID: $prometheus_datasource_uid"
+else
+  log_info "Grafana Prometheus datasource UID not detected (continuing without it)"
 fi
 
 az deployment group create \

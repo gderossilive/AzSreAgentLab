@@ -42,38 +42,47 @@ absent_over_time(up{job="ca-api"}[5m])
 increase(kube_pod_container_status_restarts_total[15m])
 ```
 
-## HTTP Traffic & Errors (if HTTP server metrics are present)
+## HTTP Traffic & Errors
 
-These depend on which instrumentation is enabled. Try the queries below and keep the ones that return series.
+In this demo, the API exports HTTP server metrics with a `grocery_` prefix.
 
 ```promql
-# Common ASP.NET / OpenTelemetry style
-sum by (status_code) (rate(http_server_request_duration_seconds_count{job="ca-api"}[5m]))
+# Requests/sec (overall)
+sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
 
-# Common Prometheus client style
-sum by (code) (rate(http_requests_total{job="ca-api"}[5m]))
+# Requests/sec by status
+sum by (status) (rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
 
-# 5xx error rate (try one that matches your metric names)
-sum(rate(http_requests_total{job="ca-api", code=~"5.."}[5m]))
+# 5xx error rate
+sum(rate(grocery_http_request_duration_seconds_count{job="ca-api", status=~"5.."}[5m]))
 
-sum(rate(http_server_request_duration_seconds_count{job="ca-api", status_code=~"5.."}[5m]))
+# Error ratio
+(
+  sum(rate(grocery_http_request_duration_seconds_count{job="ca-api", status=~"5.."}[5m]))
+)
+/
+(
+  sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
+)
 ```
+
+If you have different instrumentation enabled, you may also see other common HTTP metric name patterns (for example `http_requests_total` or `http_server_request_duration_seconds_count`).
 
 ## Latency (p50/p95/p99)
 
-Histogram naming varies a lot. If you have a duration histogram, the `histogram_quantile` patterns below are the standard approach.
+The demo exports a request duration histogram (`grocery_http_request_duration_seconds_bucket`).
 
 ```promql
-# p95 latency from a histogram (OpenTelemetry-ish)
+# p95 latency
 histogram_quantile(
   0.95,
-  sum by (le) (rate(http_server_request_duration_seconds_bucket{job="ca-api"}[5m]))
+  sum by (le) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m]))
 )
 
 # p99 latency
 histogram_quantile(
   0.99,
-  sum by (le) (rate(http_server_request_duration_seconds_bucket{job="ca-api"}[5m]))
+  sum by (le) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m]))
 )
 ```
 
@@ -96,24 +105,15 @@ sum(rate(container_cpu_cfs_throttled_seconds_total[5m]))
 
 ```promql
 # Top-N by rate (example: busiest endpoints if route labels exist)
-topk(10, sum by (route) (rate(http_requests_total{job="ca-api"}[5m])))
+topk(10, sum by (route) (rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m])))
 
 # Compare two time windows (current vs 1h ago)
 (
-  sum(rate(http_requests_total{job="ca-api"}[5m]))
+  sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
 )
 -
 (
-  sum(rate(http_requests_total{job="ca-api"}[5m] offset 1h))
-)
-
-# Error ratio (if you have total + 5xx)
-(
-  sum(rate(http_requests_total{job="ca-api", code=~"5.."}[5m]))
-)
-/
-(
-  sum(rate(http_requests_total{job="ca-api"}[5m]))
+  sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m] offset 1h))
 )
 ```
 

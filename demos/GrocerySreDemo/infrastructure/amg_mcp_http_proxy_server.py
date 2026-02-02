@@ -380,7 +380,41 @@ class AmgMcpBackend:
 def _grafana_aad_resource() -> str:
     # Default resource for Azure Managed Grafana data-plane API.
     # (Managed Identity endpoint uses `resource=...`, not OAuth scopes.)
-    return _env_str("GRAFANA_AAD_RESOURCE", "https://grafana.azure.com")
+    # NOTE: Some environments are picky about the trailing slash in the audience.
+    return _env_str("GRAFANA_AAD_RESOURCE", "https://grafana.azure.com/")
+
+
+def _grafana_aad_resources() -> list[str]:
+    """Return candidate AAD resource strings for Managed Grafana.
+
+    Managed identity token acquisition uses the v1 `resource` parameter. In practice,
+    some services accept only one of the trailing-slash variants, so we try both.
+    """
+
+    preferred = _env_str("GRAFANA_AAD_RESOURCE", "").strip()
+
+    candidates: list[str] = []
+    if preferred:
+        candidates.append(preferred)
+        # Also try the opposite trailing-slash variant.
+        if preferred.endswith("/"):
+            candidates.append(preferred.rstrip("/"))
+        else:
+            candidates.append(preferred + "/")
+
+    # Known Managed Grafana resource identifier.
+    candidates.extend(["https://grafana.azure.com/", "https://grafana.azure.com"])
+
+    # Deduplicate while preserving order.
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        item = (item or "").strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
 
 
 def _grafana_http_timeout_s() -> float:
@@ -396,8 +430,8 @@ def _grafana_render_timeout_s() -> float:
 def _grafana_org_id() -> int:
     return _env_int("GRAFANA_ORG_ID", 1)
 
-def _grafana_auth_headers(*, accept: str) -> dict[str, str]:
-    aad_token = _get_managed_identity_access_token(_grafana_aad_resource())
+def _grafana_auth_headers(*, accept: str, aad_resource: Optional[str] = None) -> dict[str, str]:
+    aad_token = _get_managed_identity_access_token((aad_resource or _grafana_aad_resource()).strip())
     return {
         "Authorization": f"Bearer {aad_token}",
         "Accept": accept,
@@ -641,13 +675,30 @@ def _grafana_get_json(path: str, *, timeout_s: Optional[float] = None) -> Any:
         raise RuntimeError("GRAFANA_ENDPOINT is required")
     url = endpoint + path
 
-    req = urllib.request.Request(
-        url,
-        method="GET",
-        headers=_grafana_auth_headers(accept="application/json"),
-    )
-    with urllib.request.urlopen(req, timeout=_grafana_http_timeout_s() if timeout_s is None else float(timeout_s)) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    last_err: Optional[Exception] = None
+    for aad_resource in _grafana_aad_resources():
+        req = urllib.request.Request(
+            url,
+            method="GET",
+            headers=_grafana_auth_headers(accept="application/json", aad_resource=aad_resource),
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=_grafana_http_timeout_s() if timeout_s is None else float(timeout_s)) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as http_err:
+            last_err = http_err
+            # Retry other audience variants on 401.
+            if int(getattr(http_err, "code", 0) or 0) == 401:
+                continue
+            raise
+        except Exception as exc:
+            last_err = exc
+            raise
+
+    # If all candidates produced 401s, raise the last one for context.
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("Grafana request failed")
 
 
 def _grafana_get_bytes(path: str, *, accept: str) -> bytes:
@@ -656,13 +707,28 @@ def _grafana_get_bytes(path: str, *, accept: str) -> bytes:
         raise RuntimeError("GRAFANA_ENDPOINT is required")
     url = endpoint + path
 
-    req = urllib.request.Request(
-        url,
-        method="GET",
-        headers=_grafana_auth_headers(accept=accept),
-    )
-    with urllib.request.urlopen(req, timeout=_grafana_render_timeout_s()) as resp:
-        return resp.read() or b""
+    last_err: Optional[Exception] = None
+    for aad_resource in _grafana_aad_resources():
+        req = urllib.request.Request(
+            url,
+            method="GET",
+            headers=_grafana_auth_headers(accept=accept, aad_resource=aad_resource),
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=_grafana_render_timeout_s()) as resp:
+                return resp.read() or b""
+        except urllib.error.HTTPError as http_err:
+            last_err = http_err
+            if int(getattr(http_err, "code", 0) or 0) == 401:
+                continue
+            raise
+        except Exception as exc:
+            last_err = exc
+            raise
+
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("Grafana request failed")
 
 
 def _grafana_dashboard_get_by_uid(uid: str) -> dict[str, Any]:
@@ -1393,18 +1459,34 @@ async def amgmcp_datasource_list() -> dict[str, Any]:
     if cached is not None:
         return cached
 
-    # If Loki direct access is configured, prefer a fast minimal list.
+    # If Loki direct access is configured, prefer a fast list.
+    # Also include the demo's expected Prometheus datasource when we can (either via
+    # direct AMW endpoint or via Grafana datasource UID).
     if _loki_endpoint() and _env_bool("PREFER_LOKI_DIRECT_DATASOURCE_LIST", default=True):
+        datasources: list[dict[str, Any]] = [
+            {
+                "name": "Loki (grocery)",
+                "type": "loki",
+                "url": _loki_endpoint(),
+            }
+        ]
+
+        amw_endpoint = _amw_query_endpoint()
+        prom_uid = _prometheus_datasource_uid()
+        if amw_endpoint or prom_uid:
+            ds: dict[str, Any] = {
+                "name": "Prometheus (AMW)",
+                "type": "prometheus",
+                "url": amw_endpoint or "",
+            }
+            if prom_uid:
+                ds["uid"] = prom_uid
+            datasources.append(ds)
+
         out = {
             "ok": True,
             "source": "loki-direct",
-            "datasources": [
-                {
-                    "name": "Loki (grocery)",
-                    "type": "loki",
-                    "url": _loki_endpoint(),
-                }
-            ],
+            "datasources": datasources,
         }
         await asyncio.to_thread(_set_cached_datasource_list, out)
         return out
@@ -1426,14 +1508,17 @@ async def amgmcp_datasource_list() -> dict[str, Any]:
                     "url": _loki_endpoint(),
                 }
             )
-        if _amw_query_endpoint():
-            datasources.append(
-                {
-                    "name": "Prometheus (AMW)",
-                    "type": "prometheus",
-                    "url": _amw_query_endpoint(),
-                }
-            )
+        amw_endpoint = _amw_query_endpoint()
+        prom_uid = _prometheus_datasource_uid()
+        if amw_endpoint or prom_uid:
+            ds: dict[str, Any] = {
+                "name": "Prometheus (AMW)",
+                "type": "prometheus",
+                "url": amw_endpoint or "",
+            }
+            if prom_uid:
+                ds["uid"] = prom_uid
+            datasources.append(ds)
 
         if datasources:
             out = {

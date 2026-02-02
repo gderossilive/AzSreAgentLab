@@ -106,6 +106,13 @@ command -v python3 >/dev/null 2>&1 || die "python3 not found (used for JSON pars
 [[ -f "$config_path" ]] || die "Missing $config_path. Run demos/GrocerySreDemo/scripts/01-setup-demo.sh first."
 if [[ "$prometheus_only" != "true" ]]; then
   [[ -f "$dashboard_template" ]] || die "Missing dashboard template: $dashboard_template"
+
+  if grep -q "__PROM_UID__" "$dashboard_template"; then
+    if [[ "$with_prometheus" != "true" ]]; then
+      log_info "Selected dashboard template requires Prometheus (AMW); enabling --with-prometheus automatically"
+      with_prometheus="true"
+    fi
+  fi
 fi
 
 subscription_id="$(python3 -c "import json; print(json.load(open('$config_path'))['SubscriptionId'])")"
@@ -170,8 +177,11 @@ if [[ "$with_prometheus" == "true" ]]; then
   "isDefault": false,
   "jsonData": {
     "httpMethod": "POST",
-    "azureAuth": true,
-    "azureAuthType": "msi"
+    "azureAuthType": "msi",
+    "azureCredentials": {
+      "authType": "msi"
+    },
+    "timeInterval": "15s"
   }
 }
 JSON
@@ -186,6 +196,8 @@ JSON
     az grafana data-source update -g "$rg_name" -n "$grafana_name" --data-source "$prom_uid" --definition "@$prom_ds_def" --only-show-errors >/dev/null
     log_ok "Prometheus datasource uid: $prom_uid"
   fi
+
+  [[ -n "$prom_uid" ]] || die "Prometheus datasource uid is empty"
 fi
 
 if [[ "$prometheus_only" == "true" ]]; then
@@ -243,14 +255,20 @@ if grep -q "__AZMON_UID__" "$dashboard_template"; then
   log_ok "API Container App: $api_containerapp_name"
 fi
 
+prom_uid_for_dashboard="${prom_uid:-}"
+if grep -q "__PROM_UID__" "$dashboard_template"; then
+  [[ -n "$prom_uid_for_dashboard" ]] || die "Dashboard template requires Prometheus datasource uid (__PROM_UID__), but Prometheus datasource was not created. Ensure AMW exists in the demo resource group, or pass --with-prometheus and fix AMW detection."
+fi
+
 log_step "Rendering dashboard definition"
-python3 - "$dashboard_template" "$dashboard_rendered" "$loki_uid" "$azmon_uid" "$subscription_id" "$rg_name" "$api_containerapp_name" <<'PY'
+python3 - "$dashboard_template" "$dashboard_rendered" "$loki_uid" "$azmon_uid" "$prom_uid_for_dashboard" "$subscription_id" "$rg_name" "$api_containerapp_name" <<'PY'
 import json
 import sys
 
 src, dst = sys.argv[1], sys.argv[2]
 loki_uid, azmon_uid = sys.argv[3], sys.argv[4]
-subscription_id, rg_name, api_containerapp_name = sys.argv[5], sys.argv[6], sys.argv[7]
+prom_uid = sys.argv[5]
+subscription_id, rg_name, api_containerapp_name = sys.argv[6], sys.argv[7], sys.argv[8]
 
 with open(src, 'r', encoding='utf-8') as f:
     data = json.load(f)
@@ -258,6 +276,7 @@ with open(src, 'r', encoding='utf-8') as f:
 serialized = json.dumps(data)
 serialized = serialized.replace('__LOKI_UID__', loki_uid)
 serialized = serialized.replace('__AZMON_UID__', azmon_uid)
+serialized = serialized.replace('__PROM_UID__', prom_uid)
 serialized = serialized.replace('__SUBSCRIPTION_ID__', subscription_id)
 serialized = serialized.replace('__RESOURCE_GROUP__', rg_name)
 serialized = serialized.replace('__API_CONTAINERAPP_NAME__', api_containerapp_name)

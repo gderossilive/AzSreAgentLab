@@ -34,7 +34,7 @@
       },
       {
         "type": "stat",
-        "title": "Errors (last 15m)",
+        "title": "Errors (count, last 15m)",
         "gridPos": { "h": 5, "w": 6, "x": 0, "y": 4 },
         "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
         "targets": [
@@ -67,116 +67,13 @@
       },
       {
         "type": "stat",
-        "title": "Requests/sec (API)",
+        "title": "CPU usage (cores)",
         "gridPos": { "h": 5, "w": 6, "x": 6, "y": 4 },
+        "datasource": { "type": "prometheus", "uid": "__PROM_UID__" },
         "targets": [
           {
-            "appInsights": {
-              "dimension": [],
-              "metricName": "select",
-              "timeGrain": "auto"
-            },
-            "azureLogAnalytics": {
-              "query": "//change this example to create your own time series query\n<table name>                                        \n                      //the table to query (e.g. Usage, Heartbeat, Perf)\n| where $__timeFilter(TimeGenerated)                                      //this is a macro used to show the full chart’s time range, choose the datetime column here\n| summarize count() by <group by column>, bin(TimeGenerated, $__interval) //change \u201cgroup by column\u201d to a column in your table, such as \u201cComputer\u201d. The $__interval macro is used to auto-select the time grain. Can also use 1h, 5m etc.\n| order by TimeGenerated asc",
-              "resultFormat": "time_series",
-              "workspace": "00000000-0000-0000-0000-000000000000"
-            },
-            "azureMonitor": {
-              "aggOptions": ["Total"],
-              "aggregation": "Total",
-              "alias": "Requests/sec",
-              "dimensionFilter": "*",
-              "dimensionFilters": [],
-              "dimensions": [],
-              "metricDefinition": "Microsoft.App/containerApps",
-              "metricName": "Requests",
-              "metricNamespace": "Microsoft.App/containerApps",
-              "resourceGroup": "__RESOURCE_GROUP__",
-              "resourceName": "__API_CONTAINERAPP_NAME__",
-              "timeGrain": "PT1M",
-              "timeGrains": [
-                { "text": "auto", "value": "auto" },
-                { "text": "1 minute", "value": "PT1M" },
-                { "text": "5 minutes", "value": "PT5M" },
-                { "text": "15 minutes", "value": "PT15M" },
-                { "text": "30 minutes", "value": "PT30M" },
-                { "text": "1 hour", "value": "PT1H" }
-              ]
-            },
-            "datasource": {
-              "type": "grafana-azure-monitor-datasource",
-              "uid": "__AZMON_UID__"
-            },
-            "queryType": "Azure Monitor",
             "refId": "A",
-            "hide": true,
-            "subscription": "__SUBSCRIPTION_ID__"
-          },
-          {
-            "datasource": { "type": "__expr__", "uid": "__expr__" },
-            "type": "math",
-            "expression": "$A / 60",
-            "refId": "B"
-          }
-        ],
-        "options": {
-          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-          "orientation": "horizontal",
-          "textMode": "auto",
-          "colorMode": "value",
-          "graphMode": "none",
-          "justifyMode": "auto"
-        },
-        "fieldConfig": {
-          "defaults": {},
-          "overrides": []
-        }
-      },
-      {
-        "type": "stat",
-        "title": "CPU utilization (API)",
-        "gridPos": { "h": 5, "w": 6, "x": 12, "y": 4 },
-        "targets": [
-          {
-            "appInsights": {
-              "dimension": [],
-              "metricName": "select",
-              "timeGrain": "auto"
-            },
-            "azureLogAnalytics": {
-              "query": "//change this example to create your own time series query\n<table name>                                        \n                      //the table to query (e.g. Usage, Heartbeat, Perf)\n| where $__timeFilter(TimeGenerated)                                      //this is a macro used to show the full chart’s time range, choose the datetime column here\n| summarize count() by <group by column>, bin(TimeGenerated, $__interval) //change \u201cgroup by column\u201d to a column in your table, such as \u201cComputer\u201d. The $__interval macro is used to auto-select the time grain. Can also use 1h, 5m etc.\n| order by TimeGenerated asc",
-              "resultFormat": "time_series",
-              "workspace": "00000000-0000-0000-0000-000000000000"
-            },
-            "azureMonitor": {
-              "aggOptions": ["Average", "Minimum", "Maximum"],
-              "aggregation": "Average",
-              "alias": "CPU%",
-              "dimensionFilter": "*",
-              "dimensionFilters": [],
-              "dimensions": [],
-              "metricDefinition": "Microsoft.App/containerApps",
-              "metricName": "CpuPercentage",
-              "metricNamespace": "Microsoft.App/containerApps",
-              "resourceGroup": "__RESOURCE_GROUP__",
-              "resourceName": "__API_CONTAINERAPP_NAME__",
-              "timeGrain": "auto",
-              "timeGrains": [
-                { "text": "auto", "value": "auto" },
-                { "text": "1 minute", "value": "PT1M" },
-                { "text": "5 minutes", "value": "PT5M" },
-                { "text": "15 minutes", "value": "PT15M" },
-                { "text": "30 minutes", "value": "PT30M" },
-                { "text": "1 hour", "value": "PT1H" }
-              ]
-            },
-            "datasource": {
-              "type": "grafana-azure-monitor-datasource",
-              "uid": "__AZMON_UID__"
-            },
-            "queryType": "Azure Monitor",
-            "refId": "A",
-            "subscription": "__SUBSCRIPTION_ID__"
+            "expr": "sum(rate(grocery_process_cpu_seconds_total{job=\"ca-api\"}[5m]))"
           }
         ],
         "options": {
@@ -189,8 +86,27 @@
         },
         "fieldConfig": {
           "defaults": {
-            "unit": "percent"
+            "unit": "cores"
           },
+          "overrides": []
+        }
+      },
+      {
+        "type": "timeseries",
+        "title": "Requests/sec (API)",
+        "gridPos": { "h": 5, "w": 12, "x": 12, "y": 4 },
+        "datasource": { "type": "prometheus", "uid": "__PROM_UID__" },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(grocery_http_request_duration_seconds_count{job=\"ca-api\"}[5m]))"
+          }
+        ],
+        "options": {
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": {
+          "defaults": {},
           "overrides": []
         }
       },
@@ -212,66 +128,7 @@
       },
       {
         "type": "timeseries",
-        "title": "Requests/sec (API)",
-        "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
-        "targets": [
-          {
-            "appInsights": {
-              "dimension": [],
-              "metricName": "select",
-              "timeGrain": "auto"
-            },
-            "azureLogAnalytics": {
-              "query": "//change this example to create your own time series query\n<table name>                                        \n                      //the table to query (e.g. Usage, Heartbeat, Perf)\n| where $__timeFilter(TimeGenerated)                                      //this is a macro used to show the full chart’s time range, choose the datetime column here\n| summarize count() by <group by column>, bin(TimeGenerated, $__interval) //change \u201cgroup by column\u201d to a column in your table, such as \u201cComputer\u201d. The $__interval macro is used to auto-select the time grain. Can also use 1h, 5m etc.\n| order by TimeGenerated asc",
-              "resultFormat": "time_series",
-              "workspace": "00000000-0000-0000-0000-000000000000"
-            },
-            "azureMonitor": {
-              "aggOptions": ["Total"],
-              "aggregation": "Total",
-              "alias": "Requests/sec",
-              "dimensionFilter": "*",
-              "dimensionFilters": [],
-              "dimensions": [],
-              "metricDefinition": "Microsoft.App/containerApps",
-              "metricName": "Requests",
-              "metricNamespace": "Microsoft.App/containerApps",
-              "resourceGroup": "__RESOURCE_GROUP__",
-              "resourceName": "__API_CONTAINERAPP_NAME__",
-              "timeGrain": "PT1M",
-              "timeGrains": [
-                { "text": "auto", "value": "auto" },
-                { "text": "1 minute", "value": "PT1M" },
-                { "text": "5 minutes", "value": "PT5M" },
-                { "text": "15 minutes", "value": "PT15M" },
-                { "text": "30 minutes", "value": "PT30M" },
-                { "text": "1 hour", "value": "PT1H" }
-              ]
-            },
-            "datasource": {
-              "type": "grafana-azure-monitor-datasource",
-              "uid": "__AZMON_UID__"
-            },
-            "queryType": "Azure Monitor",
-            "refId": "A",
-            "hide": true,
-            "subscription": "__SUBSCRIPTION_ID__"
-          },
-          {
-            "datasource": { "type": "__expr__", "uid": "__expr__" },
-            "type": "math",
-            "expression": "$A / 60",
-            "refId": "B"
-          }
-        ],
-        "options": {
-          "legend": { "displayMode": "list", "placement": "bottom" }
-        },
-        "fieldConfig": { "defaults": {}, "overrides": [] }
-      },
-      {
-        "type": "timeseries",
-        "title": "Rate limit events (429s)",
+        "title": "Rate limit events (429 count/interval)",
         "gridPos": { "h": 9, "w": 12, "x": 0, "y": 18 },
         "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
         "targets": [
@@ -303,7 +160,7 @@
       },
       {
         "type": "table",
-        "title": "Errors by errorCode (count)",
+        "title": "Errors by errorCode (count/interval)",
         "gridPos": { "h": 9, "w": 12, "x": 0, "y": 27 },
         "datasource": { "type": "loki", "uid": "__LOKI_UID__" },
         "targets": [

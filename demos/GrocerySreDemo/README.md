@@ -102,8 +102,10 @@ cd demos/GrocerySreDemo
 ./scripts/07-create-custom-grafana-dashboard.sh --dashboard scene4
 ```
 
-Optional: if you deployed Prometheus metrics into an Azure Monitor Workspace (Managed Prometheus) and want to run PromQL in Grafana,
-create/update a Prometheus datasource pointing at the AMW query endpoint:
+Metrics note: the **Overview** custom dashboard sources **metrics** from the Azure Monitor Workspace (**Managed Prometheus**) via a Prometheus datasource and **PromQL** (not via the Azure Monitor datasource).
+When you create/update the Overview dashboard, the script will automatically create/update the `Prometheus (AMW)` datasource if needed.
+
+If you only want to create/update the Prometheus (AMW) datasource (no Loki, no dashboard):
 
 ```bash
 cd demos/GrocerySreDemo
@@ -174,11 +176,16 @@ cd demos/GrocerySreDemo
 
 ### Create a custom dashboard in Azure Managed Grafana (optional)
 
-This creates a Loki datasource in your Managed Grafana instance (pointing at `ca-loki`) and then creates/updates a custom dashboard:
+This creates a Loki datasource in your Managed Grafana instance (pointing at `ca-loki`) and then creates/updates a custom dashboard.
+
+Dashboard types:
+
+- **Overview**: Loki + Prometheus (AMW) panels (PromQL)
+- **Scene 4**: Loki-only (focused on the inventory failure storyboard)
 
 ```bash
 cd demos/GrocerySreDemo
-./scripts/07-create-custom-grafana-dashboard.sh
+./scripts/07-create-custom-grafana-dashboard.sh --dashboard overview
 
 # Or: create the storyboard Scene 4 dashboard (inventory failure validation)
 ./scripts/07-create-custom-grafana-dashboard.sh --dashboard scene4
@@ -241,6 +248,7 @@ It does NOT expose dashboard download/upload or system backup/restore tools.
 
 - **Connection type**: Streamable HTTP
 - **URL**: use the full `/mcp` URL above
+- **Important**: do NOT use the Azure Managed Grafana UI endpoint (for example `https://<name>.cse.grafana.azure.com`) as the connector URL — it is not an MCP server and will typically return `401 Unauthorized` for API calls.
 - **Auth**: none at the connector (Grafana auth is done server-side via managed identity)
 
 If the portal validator probes `GET /mcp` or `DELETE /mcp` without a session id, the proxy returns `200` to avoid hard failures.
