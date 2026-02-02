@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
 import pathlib
@@ -202,6 +202,47 @@ def _prometheus_datasource_uid() -> str:
     return _env_str("PROMETHEUS_DATASOURCE_UID").strip()
 
 
+# ---------------------------------------------------------------------------
+# Managed Identity Token Cache
+# ---------------------------------------------------------------------------
+# Caches tokens per resource to avoid repeated round-trips to the MSI endpoint.
+# Tokens are typically valid for ~24h but we use a conservative TTL.
+
+@dataclass
+class _CachedToken:
+    token: str
+    expires_at: float  # time.time() when this token should be refreshed
+
+
+_token_cache: dict[str, _CachedToken] = {}
+_token_cache_lock = threading.Lock()
+
+
+def _token_cache_ttl_s() -> int:
+    # Refresh tokens 5 minutes before they expire (MSI tokens typically last 24h,
+    # but we use a shorter TTL to be safe and reduce cache staleness).
+    return _env_int("TOKEN_CACHE_TTL_S", 3300)  # 55 minutes
+
+
+def _get_cached_token(resource: str) -> Optional[str]:
+    with _token_cache_lock:
+        cached = _token_cache.get(resource)
+        if cached is None:
+            return None
+        if time.time() >= cached.expires_at:
+            del _token_cache[resource]
+            return None
+        return cached.token
+
+
+def _set_cached_token(resource: str, token: str) -> None:
+    with _token_cache_lock:
+        _token_cache[resource] = _CachedToken(
+            token=token,
+            expires_at=time.time() + _token_cache_ttl_s(),
+        )
+
+
 def _looks_like_prometheus_datasource(name: Optional[str]) -> bool:
     if not name:
         return False
@@ -210,6 +251,12 @@ def _looks_like_prometheus_datasource(name: Optional[str]) -> bool:
 
 
 def _managed_identity_access_token(resource: str) -> str:
+    """Fetch a managed identity access token for the given resource (with caching)."""
+    # Check cache first.
+    cached = _get_cached_token(resource)
+    if cached is not None:
+        return cached
+
     # Container Apps managed identity endpoint.
     endpoint = _env_str("IDENTITY_ENDPOINT")
     header = _env_str("IDENTITY_HEADER")
@@ -217,7 +264,7 @@ def _managed_identity_access_token(resource: str) -> str:
     if not endpoint or not header:
         raise RuntimeError("Managed identity environment not detected (missing IDENTITY_ENDPOINT/IDENTITY_HEADER)")
 
-    qs = {
+    qs: dict[str, str] = {
         "api-version": "2019-08-01",
         "resource": resource,
     }
@@ -225,12 +272,23 @@ def _managed_identity_access_token(resource: str) -> str:
         qs["client_id"] = client_id
 
     url = endpoint + ("&" if "?" in endpoint else "?") + urllib.parse.urlencode(qs)
-    req = urllib.request.Request(url, headers={"x-identity-header": header})
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "x-identity-header": header,
+            "X-IDENTITY-HEADER": header,  # Some endpoints are case-sensitive
+            "Metadata": "true",
+        },
+    )
     with urllib.request.urlopen(req, timeout=20) as resp:
         payload = json.loads((resp.read() or b"{}").decode("utf-8"))
     token = payload.get("access_token")
     if not token:
         raise RuntimeError("Managed identity token response missing access_token")
+
+    # Cache the token.
+    _set_cached_token(resource, str(token))
     return str(token)
 
 
@@ -384,37 +442,51 @@ def _grafana_aad_resource() -> str:
     return _env_str("GRAFANA_AAD_RESOURCE", "https://grafana.azure.com/")
 
 
+# Cache the Grafana AAD resources list (it doesn't change at runtime).
+_grafana_aad_resources_cache: Optional[list[str]] = None
+_grafana_aad_resources_lock = threading.Lock()
+
+
 def _grafana_aad_resources() -> list[str]:
     """Return candidate AAD resource strings for Managed Grafana.
 
     Managed identity token acquisition uses the v1 `resource` parameter. In practice,
     some services accept only one of the trailing-slash variants, so we try both.
+
+    This list is cached since env vars don't change at runtime.
     """
+    global _grafana_aad_resources_cache
 
-    preferred = _env_str("GRAFANA_AAD_RESOURCE", "").strip()
+    with _grafana_aad_resources_lock:
+        if _grafana_aad_resources_cache is not None:
+            return _grafana_aad_resources_cache
 
-    candidates: list[str] = []
-    if preferred:
-        candidates.append(preferred)
-        # Also try the opposite trailing-slash variant.
-        if preferred.endswith("/"):
-            candidates.append(preferred.rstrip("/"))
-        else:
-            candidates.append(preferred + "/")
+        preferred = _env_str("GRAFANA_AAD_RESOURCE", "").strip()
 
-    # Known Managed Grafana resource identifier.
-    candidates.extend(["https://grafana.azure.com/", "https://grafana.azure.com"])
+        candidates: list[str] = []
+        if preferred:
+            candidates.append(preferred)
+            # Also try the opposite trailing-slash variant.
+            if preferred.endswith("/"):
+                candidates.append(preferred.rstrip("/"))
+            else:
+                candidates.append(preferred + "/")
 
-    # Deduplicate while preserving order.
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in candidates:
-        item = (item or "").strip()
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        out.append(item)
-    return out
+        # Known Managed Grafana resource identifier.
+        candidates.extend(["https://grafana.azure.com/", "https://grafana.azure.com"])
+
+        # Deduplicate while preserving order.
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in candidates:
+            item = (item or "").strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            out.append(item)
+
+        _grafana_aad_resources_cache = out
+        return out
 
 
 def _grafana_http_timeout_s() -> float:
@@ -509,10 +581,9 @@ def _loki_query_range(
 
 def _template_extract_default_vars(uid: str) -> dict[str, str]:
     """Extract a small set of templating defaults from the baked-in dashboard template."""
-    path = _template_path_for_dashboard_uid(uid)
-    if path is None or not path.exists():
+    obj = _get_cached_dashboard_template(uid)
+    if obj is None:
         return {}
-    obj = json.loads(path.read_text(encoding="utf-8"))
     dash = obj.get("dashboard")
     if not isinstance(dash, dict):
         return {}
@@ -579,13 +650,13 @@ def _template_find_panel_query(
 
     Returns (panel_summary, expr, datasource).
     """
-    path = _template_path_for_dashboard_uid(uid)
-    if path is None:
-        raise FileNotFoundError(f"No dashboard template mapping for uid={uid}")
-    if not path.exists():
+    obj = _get_cached_dashboard_template(uid)
+    if obj is None:
+        path = _template_path_for_dashboard_uid(uid)
+        if path is None:
+            raise FileNotFoundError(f"No dashboard template mapping for uid={uid}")
         raise FileNotFoundError(f"Dashboard template not found in container: {path}")
 
-    obj = json.loads(path.read_text(encoding="utf-8"))
     dash = obj.get("dashboard")
     if not isinstance(dash, dict):
         raise ValueError("Template JSON missing 'dashboard' object")
@@ -642,37 +713,8 @@ def _template_find_panel_query(
 
 
 def _get_managed_identity_access_token(resource: str) -> str:
-    endpoint = _env_str("IDENTITY_ENDPOINT").strip()
-    secret = _env_str("IDENTITY_HEADER").strip()
-    if not endpoint or not secret:
-        raise RuntimeError("Managed identity endpoint not available (IDENTITY_ENDPOINT/IDENTITY_HEADER missing)")
-
-    params: dict[str, str] = {
-        "api-version": "2019-08-01",
-        "resource": resource,
-    }
-    client_id = _env_str("AZURE_CLIENT_ID").strip()
-    if client_id:
-        # Needed for user-assigned managed identity.
-        params["client_id"] = client_id
-
-    join_char = "&" if "?" in endpoint else "?"
-    url = endpoint + join_char + urllib.parse.urlencode(params)
-    req = urllib.request.Request(
-        url,
-        method="GET",
-        headers={
-            "X-IDENTITY-HEADER": secret,
-            # Some MSI endpoints require Metadata=true.
-            "Metadata": "true",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=_grafana_http_timeout_s()) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
-    token = payload.get("access_token")
-    if not token:
-        raise RuntimeError(f"Managed identity token response missing access_token: keys={list(payload.keys())}")
-    return token
+    """Alias for _managed_identity_access_token (consolidated)."""
+    return _managed_identity_access_token(resource)
 
 
 def _grafana_get_json(path: str, *, timeout_s: Optional[float] = None) -> Any:
@@ -870,6 +912,15 @@ def _grafana_dashboard_summary(uid: str) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Dashboard Template Cache
+# ---------------------------------------------------------------------------
+# Baked-in dashboard templates are loaded once and cached in memory.
+
+_dashboard_template_cache: dict[str, dict[str, Any]] = {}
+_dashboard_template_cache_lock = threading.Lock()
+
+
 def _template_path_for_dashboard_uid(uid: str) -> Optional[pathlib.Path]:
     # These files are baked into the proxy container image.
     mapping = {
@@ -878,14 +929,38 @@ def _template_path_for_dashboard_uid(uid: str) -> Optional[pathlib.Path]:
     return mapping.get(uid)
 
 
+def _get_cached_dashboard_template(uid: str) -> Optional[dict[str, Any]]:
+    """Get a cached dashboard template by UID, loading from disk if needed."""
+    with _dashboard_template_cache_lock:
+        if uid in _dashboard_template_cache:
+            return _dashboard_template_cache[uid]
+
+        path = _template_path_for_dashboard_uid(uid)
+        if path is None or not path.exists():
+            return None
+
+        try:
+            obj = json.loads(path.read_text(encoding="utf-8"))
+            _dashboard_template_cache[uid] = obj
+            return obj
+        except Exception:
+            return None
+
+
+def _warm_dashboard_template_cache() -> None:
+    """Pre-load known dashboard templates into memory."""
+    for uid in ["afbppudwbhl34b"]:
+        _get_cached_dashboard_template(uid)
+
+
 def _template_dashboard_summary(uid: str) -> dict[str, Any]:
-    path = _template_path_for_dashboard_uid(uid)
-    if path is None:
-        raise FileNotFoundError(f"No dashboard template mapping for uid={uid}")
-    if not path.exists():
+    obj = _get_cached_dashboard_template(uid)
+    if obj is None:
+        path = _template_path_for_dashboard_uid(uid)
+        if path is None:
+            raise FileNotFoundError(f"No dashboard template mapping for uid={uid}")
         raise FileNotFoundError(f"Dashboard template not found in container: {path}")
 
-    obj = json.loads(path.read_text(encoding="utf-8"))
     dash = obj.get("dashboard")
     if not isinstance(dash, dict):
         raise ValueError("Template JSON missing 'dashboard' object")
@@ -1453,7 +1528,23 @@ def _warm_backend_async() -> None:
             pass
 
 
-# Best-effort: warm the stdio backend at startup to avoid first-request latency.
+# Best-effort: warm caches and the stdio backend at startup to avoid first-request latency.
+def _warm_caches() -> None:
+    """Pre-warm caches that don't depend on external services."""
+    try:
+        _warm_dashboard_template_cache()
+        _grafana_aad_resources()  # Populate the AAD resources cache
+        sys.stderr.write("[proxy] cache warm-up complete\n")
+        sys.stderr.flush()
+    except Exception as exc:
+        try:
+            sys.stderr.write(f"[proxy] cache warm-up failed: {exc}\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
+
+
+threading.Thread(target=_warm_caches, daemon=True).start()
 threading.Thread(target=_warm_backend_async, daemon=True).start()
 
 

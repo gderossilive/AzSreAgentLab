@@ -1,104 +1,164 @@
-# Loki Query Reference
+# Loki Query Reference — Grocery API (SRE Agent)
 
-Use this reference to query logs from applications in this environment.
+This is an **SRE Agent knowledge file** providing LogQL queries for diagnosing Grocery API issues in Loki.
 
-## Apps in This Environment
+---
 
-| App Name | `app` label | `job` label | Description |
-|----------|-------------|-------------|-------------|
-| Grocery API | `grocery-api` | `grocery-api` | Product catalog, inventory & orders |
+## TL;DR for Agents
 
-## Query Patterns
+| Symptom                           | First Query |
+|-----------------------------------|-------------|
+| Intermittent 503 on `/inventory`  | `{app="grocery-api", level="error"} \| json \| errorCode="SUPPLIER_RATE_LIMIT_429"` |
+| General errors                    | `{app="grocery-api", level="error"}` |
+| Error spike detection             | `sum(rate({app="grocery-api", level="error"}[5m]))` |
+| Identify error codes breakdown    | `sum by (errorCode) (count_over_time({app="grocery-api"} \| json \| errorCode!="" [15m]))` |
 
-Replace `APP` with the `app` label value from the table above.
+---
 
-### Error Investigation
+## Quick Facts
 
-```logql
-# All errors for an app
-{app="APP", level="error"}
+- **Primary label selector**: `{app="grocery-api"}`
+- **Labels available**: `app`, `level`, `job`, `environment`
+- **Log format**: JSON (pino) – always use `| json` to extract fields
+- **Main error code**: `SUPPLIER_RATE_LIMIT_429` (supplier rate limiting → 503 to clients)
 
-# Rate limit / 429 errors
-{app="APP"} |= "429"
+---
 
-# Rate limit errors with details
-{app="APP"} | json | errorCode=~".*RATE_LIMIT.*"
+## Symptom → Query Decision Tree
 
-# Timeout errors
-{app="APP", level="error"} |= "timeout"
+### 1. Inventory requests returning 503
 
-# External service failures
-{app="APP", level="error"} |= "failed"
-```
-
-### Error Counts & Trends
+The Grocery API returns HTTP 503 when the upstream supplier returns 429 (rate limit).
 
 ```logql
-# Count errors over last hour
-count_over_time({app="APP", level="error"}[1h])
+# Confirm supplier rate limiting is the cause
+{app="grocery-api", level="error"} | json | errorCode="SUPPLIER_RATE_LIMIT_429"
 
-# Error rate per 5 minutes
-rate({app="APP", level="error"}[5m])
+# Check how often this happens (rate per 5m)
+sum(rate({app="grocery-api"} |= "SUPPLIER_RATE_LIMIT_429" [5m]))
 
-# Count rate limit events over time
-count_over_time({app="APP"} |= "429" [1h])
+# Count total events in the last 15 minutes
+sum(count_over_time({app="grocery-api"} |= "SUPPLIER_RATE_LIMIT_429" [15m]))
 
-# Errors grouped by errorCode
-sum by (errorCode) (count_over_time({app="APP"} | json [1h]))
+# See retry timing suggested by supplier
+{app="grocery-api", level="error"} | json | errorCode="SUPPLIER_RATE_LIMIT_429" | line_format "retryAfter={{.retryAfter}}s productId={{.productId}}"
 ```
 
-### Warnings (Early Signs of Issues)
+### 2. General error investigation (any symptom)
 
 ```logql
-# All warnings
-{app="APP", level="warn"}
+# All errors
+{app="grocery-api", level="error"}
 
-# Warnings and errors together
-{app="APP", level=~"warn|error"}
+# Error count over 1 hour
+sum(count_over_time({app="grocery-api", level="error"}[1h]))
+
+# Error rate trend (5m windows)
+sum(rate({app="grocery-api", level="error"}[5m]))
+
+# Errors grouped by error code
+sum by (errorCode) (count_over_time({app="grocery-api"} | json | errorCode!="" [15m]))
 ```
 
-### All Logs
+### 3. Check for warning signals (pre-failure indicators)
 
 ```logql
-# All logs for an app
-{app="APP"}
+# Warnings (may precede errors)
+{app="grocery-api", level="warn"}
 
-# With formatted output
-{app="APP"} | json | line_format "{{.level}}: {{.event}} - {{.message}}"
+# Combined warn + error rate
+sum(rate({app="grocery-api", level=~"warn|error"}[5m]))
 ```
 
-## Common Labels
+### 4. Batch inventory failures
 
-| Label | Values |
-|-------|--------|
-| `app` | See Apps table above |
-| `job` | Usually same as `app` |
-| `level` | `info`, `warn`, `error` |
-| `environment` | `production`, `development` |
+```logql
+# Batch requests that hit rate limit mid-processing
+{app="grocery-api"} | json | event="batch_inventory_rate_limited"
 
-## Common JSON Fields in Logs
+# Partial batch failures
+{app="grocery-api"} | json | event="batch_inventory_partial_failure"
+```
 
-| Field | Description |
-|-------|-------------|
-| `event` | Event type (e.g., `supplier_rate_limited`) |
-| `errorCode` | Error code (e.g., `SUPPLIER_RATE_LIMIT`) |
-| `message` | Human-readable description |
-| `statusCode` | HTTP status code |
-| `retryAfter` | Seconds until retry (for rate limits) |
-| `duration` | Operation duration in ms |
+### 5. Product-specific investigation
 
-## Issue Patterns
+```logql
+# Errors for a specific product
+{app="grocery-api", level="error"} | json | productId="PROD001"
 
-**Rate Limiting:**
-- 429 status codes or `RATE_LIMIT` error codes
-- Check `retryAfter` field for retry timing
-- Use `count_over_time` to see frequency
+# Inventory failures for any product
+{app="grocery-api"} | json | event="inventory_check_failed"
+```
 
-**Service Degradation:**
-- Errors with `statusCode` 500, 502, 503, 504
-- High `duration` values
-- Warnings appearing before errors
+---
 
-**Authentication Issues:**
-- 401 or 403 status codes
-- Messages with `auth`, `unauthorized`, `forbidden`
+## Key Events Reference
+
+The Grocery API emits these structured events:
+
+| Event | Level | Description | Key Fields |
+|-------|-------|-------------|------------|
+| `supplier_rate_limit_exceeded` | error | Supplier returned 429 | `productId`, `requestCount`, `limit`, `retryAfter`, `errorCode` |
+| `inventory_check_failed` | error | Inventory lookup failed | `productId`, `reason`, `errorCode`, `retryAfter` |
+| `inventory_check_success` | info | Inventory lookup succeeded | `productId`, `quantityAvailable` |
+| `batch_inventory_rate_limited` | error | Batch hit rate limit | `productId`, `processedCount`, `remainingCount` |
+| `batch_inventory_partial_failure` | error | Batch completed with errors | `summary.requested`, `summary.successful`, `summary.failed` |
+| `supplier_rate_limit_reset` | info | Rate limit window reset | `previousCount` |
+| `supplier_config` | info | Startup config logged | `rateLimit`, `resetWindowMs` |
+
+---
+
+## JSON Field Reference
+
+| Field         | Type   | Description                                        |
+|---------------|--------|----------------------------------------------------|
+| `event`       | string | Event name (see table above)                       |
+| `errorCode`   | string | Error identifier (e.g., `SUPPLIER_RATE_LIMIT_429`) |
+| `message`     | string | Human-readable message                             |
+| `productId`   | string | Product ID (e.g., `PROD001`)                       |
+| `statusCode`  | number | HTTP status code                                   |
+| `retryAfter`  | number | Seconds until rate limit resets                    |
+| `requestCount`| number | Current request count in rate limit window         |
+| `limit`       | number | Configured rate limit threshold                    |
+| `supplier`    | string | Supplier name (e.g., `FreshFoods Wholesale API`)   |
+
+---
+
+## Formatted Output Queries
+
+For quick human/agent-readable output:
+
+```logql
+# Compact error summary
+{app="grocery-api", level="error"} | json | line_format "{{.event}}: {{.errorCode}} - {{.message}}"
+
+# Rate limit details with timing
+{app="grocery-api"} | json | errorCode="SUPPLIER_RATE_LIMIT_429" | line_format "[{{.productId}}] rate limit hit, retry in {{.retryAfter}}s (count={{.requestCount}}/{{.limit}})"
+
+# Error timeline
+{app="grocery-api", level="error"} | json | line_format "{{.time}} {{.event}} {{.errorCode}}"
+```
+
+---
+
+## Correlation with Metrics
+
+After identifying log patterns, correlate with Prometheus metrics (see [amw-queries.md](amw-queries.md)):
+
+| Log Signal | Related Metric |
+|------------|----------------|
+| `SUPPLIER_RATE_LIMIT_429` events | `grocery_supplier_rate_limit_hits_total` |
+| `inventory_check_failed` events | `grocery_supplier_requests_total{status="rate_limited"}` |
+| Error rate in logs | `grocery_http_request_duration_seconds_count{status=~"5.."}` |
+
+---
+
+## Alert: SUPPLIER_RATE_LIMIT_429
+
+An Azure Monitor Scheduled Query Rule exists:
+
+- **Name**: `Grocery API - Supplier rate limit (SUPPLIER_RATE_LIMIT_429)`
+- **Trigger**: KQL query on Container App console logs for `SUPPLIER_RATE_LIMIT_429`
+- **Action**: Email notification via Action Group
+
+If this alert fires, investigate using the queries in Section 1 above.

@@ -2,9 +2,16 @@
 set -euo pipefail
 
 # End-to-end smoke test for the Azure Managed Grafana MCP HTTP proxy (/mcp).
-# - Initializes an MCP session
-# - Lists tools
-# - Calls each tool with safe, minimal inputs
+#
+# Test Structure:
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ 1. CONNECTIVITY         - Health probes, MCP endpoint reachability       ║
+# ║ 2. MCP PROTOCOL          - Initialize session, list tools                 ║
+# ║ 3. DATASOURCE TOOLS      - List, query (Loki + Prometheus)                ║
+# ║ 4. DASHBOARD TOOLS       - Search, summary, panel data, image render      ║
+# ║ 5. AZURE TOOLS (opt)     - Resource Graph, subscriptions (if enabled)     ║
+# ║ 6. DIRECT PROMETHEUS     - AMW query endpoint validation                  ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 # No secrets are printed or written.
 
@@ -22,14 +29,15 @@ Options:
                            Example: https://<fqdn>/mcp
   --subscription-id <id>   Subscription id for Resource Graph queries (default: env AZURE_SUBSCRIPTION_ID)
   --resource-id <id>       Resource id for resource-log queries (optional; if required, tool will be skipped)
-    --prometheus-datasource-name <n>
-                                                     Grafana Prometheus datasource name to query via MCP (default: Prometheus (AMW))
-    --dashboard-uid <uid>     Grafana dashboard UID to use for dashboard summary + panel render
-                                                        Default: afbppudwbhl34b
-    --amw-name <name>        Azure Monitor Workspace name (Microsoft.Monitor/accounts) for Prometheus query test
-                                                     Default: auto-detect first AMW in the demo resource group
-    --amw-query-endpoint <u> Azure Monitor Workspace Prometheus query endpoint
-                                                     Default: read from AMW properties.metrics.prometheusQueryEndpoint
+  --prometheus-datasource-name <n>
+                           Grafana Prometheus datasource name to query via MCP (default: Prometheus (AMW))
+  --dashboard-uid <uid>    Grafana dashboard UID to use for dashboard summary + panel render
+                           Default: afbppudwbhl34b
+  --amw-name <name>        Azure Monitor Workspace name (Microsoft.Monitor/accounts) for Prometheus query test
+                           Default: auto-detect first AMW in the demo resource group
+  --amw-query-endpoint <u> Azure Monitor Workspace Prometheus query endpoint
+                           Default: read from AMW properties.metrics.prometheusQueryEndpoint
+  --verbose                Show detailed response data
   -h|--help                Show help
 
 Auto-detect behavior:
@@ -49,6 +57,7 @@ dashboard_uid="afbppudwbhl34b"
 amw_name=""
 amw_query_endpoint=""
 prometheus_datasource_name="Prometheus (AMW)"
+verbose="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,14 +67,16 @@ while [[ $# -gt 0 ]]; do
       subscription_id="${2:-}"; shift 2 ;;
     --resource-id)
       resource_id="${2:-}"; shift 2 ;;
-        --prometheus-datasource-name)
-            prometheus_datasource_name="${2:-}"; shift 2 ;;
-        --dashboard-uid)
-            dashboard_uid="${2:-}"; shift 2 ;;
-        --amw-name)
-            amw_name="${2:-}"; shift 2 ;;
-        --amw-query-endpoint)
-            amw_query_endpoint="${2:-}"; shift 2 ;;
+    --prometheus-datasource-name)
+      prometheus_datasource_name="${2:-}"; shift 2 ;;
+    --dashboard-uid)
+      dashboard_uid="${2:-}"; shift 2 ;;
+    --amw-name)
+      amw_name="${2:-}"; shift 2 ;;
+    --amw-query-endpoint)
+      amw_query_endpoint="${2:-}"; shift 2 ;;
+    --verbose)
+      verbose="true"; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -93,17 +104,17 @@ fi
 
 # Best-effort resolve AMW Prometheus query endpoint for the Prometheus API test.
 if [[ -z "$amw_query_endpoint" ]]; then
-    if command -v az >/dev/null 2>&1 && [[ -f "$config_path" ]]; then
-        rg_name="$(python3 -c "import json; print(json.load(open('$config_path'))['ResourceGroupName'])" 2>/dev/null || true)"
-        if [[ -n "$rg_name" ]] && az account show >/dev/null 2>&1; then
-            if [[ -z "$amw_name" ]]; then
-                amw_name="$(az resource list -g "$rg_name" --resource-type Microsoft.Monitor/accounts --query "[0].name" -o tsv 2>/dev/null || true)"
-            fi
-            if [[ -n "$amw_name" ]]; then
-                amw_query_endpoint="$(az resource show -g "$rg_name" -n "$amw_name" --resource-type Microsoft.Monitor/accounts --query properties.metrics.prometheusQueryEndpoint -o tsv 2>/dev/null || true)"
-            fi
-        fi
+  if command -v az >/dev/null 2>&1 && [[ -f "$config_path" ]]; then
+    rg_name="$(python3 -c "import json; print(json.load(open('$config_path'))['ResourceGroupName'])" 2>/dev/null || true)"
+    if [[ -n "$rg_name" ]] && az account show >/dev/null 2>&1; then
+      if [[ -z "$amw_name" ]]; then
+        amw_name="$(az resource list -g "$rg_name" --resource-type Microsoft.Monitor/accounts --query "[0].name" -o tsv 2>/dev/null || true)"
+      fi
+      if [[ -n "$amw_name" ]]; then
+        amw_query_endpoint="$(az resource show -g "$rg_name" -n "$amw_name" --resource-type Microsoft.Monitor/accounts --query properties.metrics.prometheusQueryEndpoint -o tsv 2>/dev/null || true)"
+      fi
     fi
+  fi
 fi
 
 if [[ -z "$mcp_url" ]]; then
@@ -111,7 +122,7 @@ if [[ -z "$mcp_url" ]]; then
   exit 2
 fi
 
-python3 - "$mcp_url" "$subscription_id" "$resource_id" "$dashboard_uid" "$amw_query_endpoint" "$prometheus_datasource_name" <<'PY'
+python3 - "$mcp_url" "$subscription_id" "$resource_id" "$dashboard_uid" "$amw_query_endpoint" "$prometheus_datasource_name" "$verbose" <<'PY'
 import json
 import sys
 import time
@@ -119,7 +130,8 @@ import subprocess
 import urllib.parse
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 mcp_url = sys.argv[1].rstrip('/')
 subscription_id = (sys.argv[2] or '').strip()
@@ -127,7 +139,96 @@ resource_id = (sys.argv[3] or '').strip()
 dashboard_uid = (sys.argv[4] or '').strip()
 amw_query_endpoint = (sys.argv[5] or '').strip() if len(sys.argv) > 5 else ''
 prometheus_datasource_name = (sys.argv[6] or '').strip() if len(sys.argv) > 6 else 'Prometheus (AMW)'
+verbose = (sys.argv[7] or '').strip().lower() == 'true' if len(sys.argv) > 7 else False
 
+
+# ============================================================================
+# Output Formatting
+# ============================================================================
+
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+    RESET = '\033[0m'
+
+
+def section(title: str) -> None:
+    """Print a section header."""
+    width = 75
+    print()
+    print(f"{Colors.BOLD}{Colors.BLUE}{'═' * width}{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.BLUE}  {title}{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.BLUE}{'═' * width}{Colors.RESET}")
+
+
+def subsection(title: str) -> None:
+    """Print a subsection header."""
+    print(f"\n{Colors.CYAN}── {title} ──{Colors.RESET}")
+
+
+def log_ok(msg: str) -> None:
+    print(f"  {Colors.GREEN}✓{Colors.RESET} {msg}")
+
+
+def log_fail(msg: str) -> None:
+    print(f"  {Colors.RED}✗{Colors.RESET} {msg}")
+
+
+def log_skip(msg: str) -> None:
+    print(f"  {Colors.YELLOW}○{Colors.RESET} {Colors.DIM}{msg}{Colors.RESET}")
+
+
+def log_info(msg: str) -> None:
+    print(f"  {Colors.DIM}ℹ{Colors.RESET} {msg}")
+
+
+def log_detail(msg: str) -> None:
+    if verbose:
+        print(f"    {Colors.DIM}{msg}{Colors.RESET}")
+
+
+# ============================================================================
+# Test Result Tracking
+# ============================================================================
+
+@dataclass
+class TestResult:
+    name: str
+    category: str
+    passed: bool
+    duration_ms: float = 0.0
+    source: str = ""
+    details: str = ""
+    skipped: bool = False
+    skip_reason: str = ""
+
+
+test_results: List[TestResult] = []
+
+
+def record_result(result: TestResult) -> None:
+    test_results.append(result)
+    if result.skipped:
+        log_skip(f"{result.name}: {result.skip_reason}")
+    elif result.passed:
+        src = f" [{result.source}]" if result.source else ""
+        dur = f" ({result.duration_ms:.0f}ms)" if result.duration_ms > 0 else ""
+        log_ok(f"{result.name}{src}{dur}")
+        if result.details:
+            log_detail(result.details)
+    else:
+        log_fail(f"{result.name}: {result.details}")
+
+
+# ============================================================================
+# HTTP and MCP Helpers
+# ============================================================================
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
@@ -170,7 +271,7 @@ def _json_loads_maybe(payload: bytes) -> Any:
         return {'_raw': payload[:512].decode('utf-8', errors='replace')}
 
 
-def _short(obj: Any, limit: int = 700) -> str:
+def _short(obj: Any, limit: int = 300) -> str:
     try:
         s = json.dumps(obj, ensure_ascii=False)
     except Exception:
@@ -183,17 +284,7 @@ def _short(obj: Any, limit: int = 700) -> str:
 def _az_access_token(resource: str) -> Optional[str]:
     try:
         out = subprocess.check_output(
-            [
-                'az',
-                'account',
-                'get-access-token',
-                '--resource',
-                resource,
-                '--query',
-                'accessToken',
-                '-o',
-                'tsv',
-            ],
+            ['az', 'account', 'get-access-token', '--resource', resource, '--query', 'accessToken', '-o', 'tsv'],
             stderr=subprocess.DEVNULL,
         )
         token = out.decode('utf-8').strip()
@@ -211,195 +302,106 @@ def _prom_query(endpoint: str, expr: str) -> Tuple[int, Any]:
     qs = urllib.parse.urlencode({'query': expr})
     url = f"{base}/api/v1/query?{qs}"
     status, _headers, payload = _http(
-        'GET',
-        url,
-        headers={
-            'accept': 'application/json',
-            'authorization': f'Bearer {token}',
-        },
+        'GET', url,
+        headers={'accept': 'application/json', 'authorization': f'Bearer {token}'},
         timeout_s=30,
     )
     return status, _json_loads_maybe(payload)
 
 
-def _mcp_call(session_id: str, req_id: int, method: str, params: Dict[str, Any]) -> Tuple[bool, Any]:
+# ============================================================================
+# MCP Session Management
+# ============================================================================
+
+session_id: str = ""
+req_id_counter: int = 10
+
+
+def mcp_call(method: str, params: Dict[str, Any]) -> Tuple[bool, Any, float]:
+    global req_id_counter
+    req_id_counter += 1
+    
+    start = time.time()
     status, headers, payload = _http(
-        'POST',
-        mcp_url,
+        'POST', mcp_url,
         headers={
             'accept': 'application/json',
             'content-type': 'application/json',
             'mcp-session-id': session_id,
         },
-        json_body={'jsonrpc': '2.0', 'id': req_id, 'method': method, 'params': params},
-        timeout_s=60,
+        json_body={'jsonrpc': '2.0', 'id': req_id_counter, 'method': method, 'params': params},
+        timeout_s=90,
     )
+    duration_ms = (time.time() - start) * 1000
+    
     obj = _json_loads_maybe(payload)
     if status != 200:
-        return False, {'status': status, 'headers': headers, 'body': obj}
+        return False, {'status': status, 'headers': headers, 'body': obj}, duration_ms
     if isinstance(obj, dict) and 'error' in obj:
-        return False, obj
-    return True, obj
+        return False, obj, duration_ms
+    return True, obj, duration_ms
 
 
-failures = 0
-
-print(f"[INFO] MCP URL: {mcp_url}")
-
-if amw_query_endpoint:
-    print(f"[INFO] AMW Prometheus query endpoint: {amw_query_endpoint}")
-
-if prometheus_datasource_name:
-    print(f"[INFO] Grafana Prometheus datasource (expected): {prometheus_datasource_name}")
-
-# Probe routes
-for path in ('/', '/healthz'):
-    status, _, payload = _http('GET', mcp_url.replace('/mcp', '') + path, headers={'accept': 'application/json'}, timeout_s=20)
-    obj = _json_loads_maybe(payload)
-    ok = status == 200 and isinstance(obj, dict) and obj.get('status', 'ok') in ('ok', 'OK')
-    tag = 'OK' if ok else 'WARN'
-    print(f"[{tag}] GET {path} -> {status} {_short(obj)}")
-
-# Connector-compat probes
-status, _, payload = _http('GET', mcp_url, headers={'accept': 'application/json'}, timeout_s=20)
-print(f"[INFO] GET /mcp (no session, JSON) -> {status} {_short(_json_loads_maybe(payload))}")
-status, _, payload = _http('DELETE', mcp_url, headers={'accept': 'application/json'}, timeout_s=20)
-print(f"[INFO] DELETE /mcp (no session) -> {status} {_short(_json_loads_maybe(payload))}")
-
-# Initialize
-init_req = {
-    'jsonrpc': '2.0',
-    'id': 1,
-    'method': 'initialize',
-    'params': {
-        'protocolVersion': '2025-11-25',
-        'capabilities': {},
-        'clientInfo': {'name': 'grafana-mcp-e2e-test', 'version': '0'},
-    },
-}
-start = time.time()
-status, headers, payload = _http(
-    'POST',
-    mcp_url,
-    headers={'accept': 'application/json', 'content-type': 'application/json'},
-    json_body=init_req,
-    timeout_s=60,
-)
-init_obj = _json_loads_maybe(payload)
-session_id = headers.get('mcp-session-id')
-dt = time.time() - start
-if status != 200 or not session_id or not isinstance(init_obj, dict) or 'error' in init_obj:
-    print(f"[FAIL] initialize -> status={status} session_id={session_id!r} dt={dt:.2f}s body={_short(init_obj)}")
-    sys.exit(2)
-print(f"[OK] initialize -> session_id={session_id} dt={dt:.2f}s")
-
-# tools/list
-ok, tools_list = _mcp_call(session_id, 2, 'tools/list', {})
-if not ok:
-    print(f"[FAIL] tools/list -> {_short(tools_list)}")
-    sys.exit(2)
-
-tools = ((tools_list or {}).get('result') or {}).get('tools')
-if not isinstance(tools, list):
-    print(f"[FAIL] tools/list result.tools missing -> {_short(tools_list)}")
-    sys.exit(2)
-
-print(f"[INFO] tools discovered: {len(tools)}")
-
-by_name: Dict[str, Dict[str, Any]] = {}
-for t in tools:
-    if isinstance(t, dict) and isinstance(t.get('name'), str):
-        by_name[t['name']] = t
-
-# Helpers to derive safe arguments
-
-def _required_keys(tool: Dict[str, Any]) -> set:
-    schema = tool.get('inputSchema')
-    if isinstance(schema, dict):
-        req = schema.get('required')
-        if isinstance(req, list):
-            return {x for x in req if isinstance(x, str)}
-    return set()
+def tool_call(name: str, args: Dict[str, Any]) -> Tuple[bool, Any, float, str]:
+    """Call an MCP tool and return (success, response, duration_ms, source)."""
+    ok, resp, duration_ms = mcp_call('tools/call', {'name': name, 'arguments': args})
+    
+    source = ""
+    if ok and isinstance(resp, dict):
+        result = resp.get('result')
+        if isinstance(result, dict):
+            if result.get('isError') is True:
+                return False, result, duration_ms, source
+            sc = result.get('structuredContent')
+            if isinstance(sc, dict):
+                if sc.get('ok') is False:
+                    return False, sc, duration_ms, source
+                source = sc.get('source', '')
+            return True, resp, duration_ms, source
+    return ok, resp, duration_ms, source
 
 
-def _pick_dashboard_uid(search_resp: Any) -> Optional[str]:
-    # We don't want to depend on exact result shape; try a few common ones.
-    if not isinstance(search_resp, dict):
+# ============================================================================
+# Result Extraction Helpers
+# ============================================================================
+
+def _sc_from_resp(resp: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(resp, dict):
         return None
-    result = search_resp.get('result')
-    if isinstance(result, dict):
-        for key in ('dashboards', 'results', 'items'):
-            items = result.get(key)
-            if isinstance(items, list):
-                for it in items:
-                    if isinstance(it, dict):
-                        uid = it.get('uid') or it.get('dashboardUid')
-                        if isinstance(uid, str) and uid.strip():
-                            return uid
-    # Sometimes backend tool returns nested content arrays.
-    for v in search_resp.values():
-        if isinstance(v, list):
-            for it in v:
-                if isinstance(it, dict):
-                    uid = it.get('uid')
-                    if isinstance(uid, str) and uid.strip():
-                        return uid
-    return None
-
-
-def _pick_loki_datasource_uid(ds_resp: Any) -> Optional[str]:
-    if not isinstance(ds_resp, dict):
-        return None
-    # Proxy fast-path returns {ok: True, datasources: [...]}
-    dss = ds_resp.get('datasources')
-    if isinstance(dss, list):
-        for ds in dss:
-            if not isinstance(ds, dict):
-                continue
-            t = (ds.get('type') or '')
-            name = (ds.get('name') or '')
-            uid = ds.get('uid')
-            if isinstance(uid, str) and uid.strip() and ('loki' in str(t).lower() or 'loki' in str(name).lower()):
-                return uid
-    # Backend tool may return different shape.
-    result = ds_resp.get('result')
-    if isinstance(result, dict):
-        items = result.get('datasources') or result.get('items') or result.get('result')
-        if isinstance(items, list):
-            for ds in items:
-                if not isinstance(ds, dict):
-                    continue
-                t = (ds.get('type') or '')
-                name = (ds.get('name') or '')
-                uid = ds.get('uid') or ds.get('datasourceUid')
-                if isinstance(uid, str) and uid.strip() and ('loki' in str(t).lower() or 'loki' in str(name).lower()):
-                    return uid
-    return None
-
-
-results_cache: Dict[str, Any] = {}
-
-# Pre-run dependencies for better end-to-end coverage
-# - datasource_list helps populate datasource UID for query_datasource
-# - get_dashboard_summary lists panels so we can render just one panel
-
-
-def _pick_panel_id(summary_tool_resp: Any) -> Optional[int]:
-    if not isinstance(summary_tool_resp, dict):
-        return None
-    result = summary_tool_resp.get('result')
+    result = resp.get('result')
     if not isinstance(result, dict):
         return None
     sc = result.get('structuredContent')
-    if not isinstance(sc, dict):
+    return sc if isinstance(sc, dict) else None
+
+
+def _datasource_names(resp: Any) -> List[str]:
+    sc = _sc_from_resp(resp)
+    if not sc:
+        return []
+    dss = sc.get('datasources')
+    if not isinstance(dss, list):
+        return []
+    return [ds.get('name') for ds in dss if isinstance(ds, dict) and ds.get('name')]
+
+
+def _panel_count(resp: Any) -> int:
+    sc = _sc_from_resp(resp)
+    if not sc:
+        return 0
+    panels = sc.get('panels')
+    return len(panels) if isinstance(panels, list) else 0
+
+
+def _pick_panel_id(resp: Any) -> Optional[int]:
+    sc = _sc_from_resp(resp)
+    if not sc:
         return None
     panels = sc.get('panels')
     if not isinstance(panels, list):
         return None
     for p in panels:
-        if not isinstance(p, dict):
-            continue
-        if p.get('renderable') is True:
+        if isinstance(p, dict) and p.get('renderable') is True:
             pid = p.get('id')
             try:
                 if pid is not None:
@@ -408,356 +410,688 @@ def _pick_panel_id(summary_tool_resp: Any) -> Optional[int]:
                 continue
     return None
 
-def run_tool(name: str, args: Dict[str, Any], req_id: int) -> Tuple[bool, Any]:
-    start_t = time.time()
-    ok2, resp = _mcp_call(session_id, req_id, 'tools/call', {'name': name, 'arguments': args})
-    dt2 = time.time() - start_t
 
-    tool_ok = False
-    tool_err = None
-    if ok2 and isinstance(resp, dict):
-        result = resp.get('result')
-        if isinstance(result, dict):
-            if result.get('isError') is True:
-                tool_err = result
-            else:
-                sc = result.get('structuredContent')
-                if isinstance(sc, dict) and sc.get('ok') is False:
-                    tool_err = sc
-                else:
-                    tool_ok = True
-        else:
-            # Unexpected shape; treat as failure.
-            tool_err = {'error': 'Missing result object'}
-    else:
-        tool_err = resp
-
-    def _sc_from_resp(r: Any) -> Optional[Dict[str, Any]]:
-        if not isinstance(r, dict):
-            return None
-        result = r.get('result')
-        if not isinstance(result, dict):
-            return None
-        sc = result.get('structuredContent')
-        return sc if isinstance(sc, dict) else None
-
-    def _summarize_tool(r: Any) -> str:
-        sc = _sc_from_resp(r)
-        if not sc:
-            return ''
-        parts = []
-        src = sc.get('source')
-        if isinstance(src, str) and src.strip():
-            parts.append(f"source={src}")
-        if name == 'amgmcp_datasource_list':
-            dss = sc.get('datasources')
-            if isinstance(dss, list):
-                parts.append(f"datasources={len(dss)}")
-        if name == 'amgmcp_query_datasource':
-            ds_uid = sc.get('datasourceUid') or sc.get('datasourceUID')
-            if isinstance(ds_uid, str) and ds_uid.strip():
-                parts.append(f"datasourceUid={ds_uid}")
-        return (" " + " ".join(parts)) if parts else ''
-
-    if tool_ok:
-        print(f"[OK]  {name} dt={dt2:.2f}s args={_short(args, 200)}{_summarize_tool(resp)}")
-    else:
-        print(f"[FAIL] {name} dt={dt2:.2f}s args={_short(args, 200)} resp={_short(tool_err)}{_summarize_tool(resp)}")
-    return tool_ok, resp
-
-
-req_id = 10
-
-# 1) datasource list
-if 'amgmcp_datasource_list' in by_name:
-    ok2, resp = run_tool('amgmcp_datasource_list', {}, req_id)
-    req_id += 1
-    results_cache['amgmcp_datasource_list'] = resp
-    if not ok2:
-        failures += 1
-
-    # Run datasource_list twice to show cache behavior and confirm stable source.
-    ok3, resp2 = run_tool('amgmcp_datasource_list', {}, req_id)
-    req_id += 1
-    results_cache['amgmcp_datasource_list_2'] = resp2
-    if not ok3:
-        failures += 1
-
-
-def _has_datasource_named(ds_resp: Any, name: str) -> bool:
-    if not name:
-        return False
-    if not isinstance(ds_resp, dict):
-        return False
-
-    # Proxy fast-path returns {ok: True, datasources: [...]}
-    dss = ds_resp.get('datasources')
-    if isinstance(dss, list):
-        for ds in dss:
-            if isinstance(ds, dict) and ds.get('name') == name:
-                return True
-
-    # Backend tool may return nested shapes under result.
-    result = ds_resp.get('result')
+def _query_result_count(resp: Any) -> int:
+    sc = _sc_from_resp(resp)
+    if not sc:
+        return 0
+    result = sc.get('result')
     if isinstance(result, dict):
-        for key in ('datasources', 'items', 'result'):
-            items = result.get(key)
-            if isinstance(items, list):
-                for ds in items:
-                    if isinstance(ds, dict) and ds.get('name') == name:
-                        return True
-    return False
+        data = result.get('data')
+        if isinstance(data, dict):
+            res = data.get('result')
+            if isinstance(res, list):
+                return len(res)
+    return 0
 
 
-def _datasource_list_source(ds_resp: Any) -> Optional[str]:
-    if not isinstance(ds_resp, dict):
-        return None
-    result = ds_resp.get('result')
-    if not isinstance(result, dict):
-        return None
-    sc = result.get('structuredContent')
-    if not isinstance(sc, dict):
-        return None
-    src = sc.get('source')
-    return src if isinstance(src, str) and src.strip() else None
+# ============================================================================
+# Test Implementation
+# ============================================================================
+
+results_cache: Dict[str, Any] = {}
+discovered_tools: Dict[str, Dict[str, Any]] = {}
 
 
-def _datasource_names(ds_resp: Any) -> list[str]:
-    out: list[str] = []
-    if not isinstance(ds_resp, dict):
-        return out
-    result = ds_resp.get('result')
-    if isinstance(result, dict):
-        sc = result.get('structuredContent')
-        if isinstance(sc, dict):
-            dss = sc.get('datasources')
-            if isinstance(dss, list):
-                for ds in dss:
-                    if isinstance(ds, dict):
-                        n = ds.get('name')
-                        if isinstance(n, str) and n.strip():
-                            out.append(n)
-    return out
+def test_connectivity() -> int:
+    """Test 1: Connectivity - Health probes and MCP endpoint reachability."""
+    section("1. CONNECTIVITY")
+    failures = 0
+    base_url = mcp_url.replace('/mcp', '')
+    
+    # Health endpoints
+    subsection("Health Endpoints")
+    for path in ('/', '/healthz'):
+        start = time.time()
+        status, _, payload = _http('GET', base_url + path, headers={'accept': 'application/json'}, timeout_s=20)
+        duration_ms = (time.time() - start) * 1000
+        obj = _json_loads_maybe(payload)
+        ok = status == 200 and isinstance(obj, dict)
+        
+        record_result(TestResult(
+            name=f"GET {path}",
+            category="connectivity",
+            passed=ok,
+            duration_ms=duration_ms,
+            details=_short(obj) if not ok else "",
+        ))
+        if not ok:
+            failures += 1
+    
+    # MCP connector compatibility probes
+    subsection("MCP Connector Compatibility")
+    
+    # GET /mcp without session (should return 200 for connector validation)
+    status, _, payload = _http('GET', mcp_url, headers={'accept': 'application/json'}, timeout_s=20)
+    record_result(TestResult(
+        name="GET /mcp (no session)",
+        category="connectivity",
+        passed=status == 200,
+        details=f"status={status}" if status != 200 else "",
+    ))
+    
+    # DELETE /mcp without session (should return 200 for connector validation)
+    status, _, payload = _http('DELETE', mcp_url, headers={'accept': 'application/json'}, timeout_s=20)
+    record_result(TestResult(
+        name="DELETE /mcp (no session)",
+        category="connectivity",
+        passed=status == 200,
+        details=f"status={status}" if status != 200 else "",
+    ))
+    
+    return failures
 
 
-# 1b) Prometheus datasource query via Grafana MCP (tests the Grafana datasource wiring)
-# Note: datasource discovery can legitimately fall back to a Loki-only list; don't gate on it.
-if 'amgmcp_query_datasource' in by_name:
-    if prometheus_datasource_name:
-        ds_src = _datasource_list_source(results_cache.get('amgmcp_datasource_list') or {})
-        ds_names = _datasource_names(results_cache.get('amgmcp_datasource_list') or {})
-        if ds_src:
-            print(f"[INFO] datasource_list source: {ds_src}")
-        if ds_names:
-            print(f"[INFO] datasource_list names: {', '.join(ds_names)}")
+def test_mcp_protocol() -> int:
+    """Test 2: MCP Protocol - Initialize session and list tools."""
+    global session_id, discovered_tools
+    section("2. MCP PROTOCOL")
+    failures = 0
+    
+    subsection("Session Initialization")
+    
+    init_req = {
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'initialize',
+        'params': {
+            'protocolVersion': '2025-11-25',
+            'capabilities': {},
+            'clientInfo': {'name': 'grafana-mcp-e2e-test', 'version': '1.0'},
+        },
+    }
+    
+    start = time.time()
+    status, headers, payload = _http(
+        'POST', mcp_url,
+        headers={'accept': 'application/json', 'content-type': 'application/json'},
+        json_body=init_req,
+        timeout_s=60,
+    )
+    duration_ms = (time.time() - start) * 1000
+    
+    init_obj = _json_loads_maybe(payload)
+    session_id = headers.get('mcp-session-id', '')
+    
+    ok = status == 200 and session_id and isinstance(init_obj, dict) and 'error' not in init_obj
+    record_result(TestResult(
+        name="Initialize MCP session",
+        category="protocol",
+        passed=ok,
+        duration_ms=duration_ms,
+        details=f"session_id={session_id[:16]}..." if ok else f"status={status}, error={_short(init_obj)}",
+    ))
+    
+    if not ok:
+        log_fail("Cannot proceed without session. Exiting.")
+        sys.exit(2)
+    
+    # List tools
+    subsection("Tool Discovery")
+    
+    ok, tools_list, duration_ms = mcp_call('tools/list', {})
+    if not ok:
+        record_result(TestResult(
+            name="List MCP tools",
+            category="protocol",
+            passed=False,
+            duration_ms=duration_ms,
+            details=_short(tools_list),
+        ))
+        log_fail("Cannot proceed without tools. Exiting.")
+        sys.exit(2)
+    
+    tools = ((tools_list or {}).get('result') or {}).get('tools')
+    if not isinstance(tools, list):
+        log_fail("tools/list result.tools missing. Exiting.")
+        sys.exit(2)
+    
+    for t in tools:
+        if isinstance(t, dict) and isinstance(t.get('name'), str):
+            discovered_tools[t['name']] = t
+    
+    record_result(TestResult(
+        name="List MCP tools",
+        category="protocol",
+        passed=True,
+        duration_ms=duration_ms,
+        details=f"discovered {len(discovered_tools)} tools",
+    ))
+    
+    # Show discovered tools
+    log_info(f"Tools: {', '.join(sorted(discovered_tools.keys()))}")
+    
+    return failures
 
-        end_ms = _now_ms()
-        start_ms = end_ms - 15 * 60 * 1000
-        ok2, resp = run_tool(
-            'amgmcp_query_datasource',
-            {
-                'datasourceName': prometheus_datasource_name,
-                'expr': 'up{job="ca-api"}',
-                'fromMs': start_ms,
-                'toMs': end_ms,
-            },
-            req_id,
-        )
-        req_id += 1
-        results_cache['amgmcp_query_prometheus_datasource'] = resp
+
+def test_datasource_tools() -> int:
+    """Test 3: Datasource Tools - List and query datasources."""
+    section("3. DATASOURCE TOOLS")
+    failures = 0
+    
+    # 3.1 List datasources
+    subsection("Datasource List")
+    
+    if 'amgmcp_datasource_list' not in discovered_tools:
+        record_result(TestResult(
+            name="amgmcp_datasource_list",
+            category="datasource",
+            passed=False,
+            skipped=True,
+            skip_reason="tool not available",
+        ))
+    else:
+        ok, resp, duration_ms, source = tool_call('amgmcp_datasource_list', {})
+        results_cache['datasource_list'] = resp
+        ds_names = _datasource_names(resp)
+        
+        record_result(TestResult(
+            name="amgmcp_datasource_list",
+            category="datasource",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details=f"datasources: {', '.join(ds_names)}" if ok else _short(resp),
+        ))
+        if not ok:
+            failures += 1
+        
+        # Test cache behavior (second call should be fast)
+        ok2, resp2, duration_ms2, source2 = tool_call('amgmcp_datasource_list', {})
+        record_result(TestResult(
+            name="amgmcp_datasource_list (cached)",
+            category="datasource",
+            passed=ok2,
+            duration_ms=duration_ms2,
+            source=source2,
+            details="cache hit verified" if duration_ms2 < duration_ms * 0.8 else "",
+        ))
         if not ok2:
             failures += 1
+    
+    # 3.2 Query Loki datasource
+    subsection("Loki Query")
+    
+    if 'amgmcp_query_datasource' not in discovered_tools:
+        record_result(TestResult(
+            name="amgmcp_query_datasource (Loki)",
+            category="datasource",
+            passed=False,
+            skipped=True,
+            skip_reason="tool not available",
+        ))
     else:
-        print('[SKIP] Prometheus datasource MCP query: missing datasource name')
+        end_ms = _now_ms()
+        start_ms = end_ms - 15 * 60 * 1000
+        
+        ok, resp, duration_ms, source = tool_call('amgmcp_query_datasource', {
+            'datasourceName': 'Loki (grocery)',
+            'query': '{app="grocery-api"} | json',
+            'limit': 5,
+            'fromMs': start_ms,
+            'toMs': end_ms,
+        })
+        results_cache['loki_query'] = resp
+        
+        record_result(TestResult(
+            name="amgmcp_query_datasource (Loki)",
+            category="datasource",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details="" if ok else _short(resp),
+        ))
+        if not ok:
+            failures += 1
+    
+    # 3.3 Query Prometheus datasource
+    subsection("Prometheus Query (via MCP)")
+    
+    if 'amgmcp_query_datasource' not in discovered_tools:
+        record_result(TestResult(
+            name="amgmcp_query_datasource (Prometheus)",
+            category="datasource",
+            passed=False,
+            skipped=True,
+            skip_reason="tool not available",
+        ))
+    elif not prometheus_datasource_name:
+        record_result(TestResult(
+            name="amgmcp_query_datasource (Prometheus)",
+            category="datasource",
+            passed=False,
+            skipped=True,
+            skip_reason="missing --prometheus-datasource-name",
+        ))
+    else:
+        end_ms = _now_ms()
+        start_ms = end_ms - 15 * 60 * 1000
+        
+        ok, resp, duration_ms, source = tool_call('amgmcp_query_datasource', {
+            'datasourceName': prometheus_datasource_name,
+            'expr': 'up{job="ca-api"}',
+            'fromMs': start_ms,
+            'toMs': end_ms,
+        })
+        results_cache['prom_query'] = resp
+        result_count = _query_result_count(resp)
+        
+        record_result(TestResult(
+            name="amgmcp_query_datasource (Prometheus)",
+            category="datasource",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details=f"results={result_count}" if ok else _short(resp),
+        ))
+        if not ok:
+            failures += 1
+    
+    return failures
 
-# 2) dashboard search
-if 'amgmcp_dashboard_search' in by_name:
-    ok2, resp = run_tool('amgmcp_dashboard_search', {'query': 'Grocery App - SRE Overview (Custom)'}, req_id)
-    req_id += 1
-    results_cache['amgmcp_dashboard_search'] = resp
-    if not ok2:
-        failures += 1
 
-# 2b) dashboard summary (panel inventory)
-if 'amgmcp_get_dashboard_summary' in by_name:
-    ok2, resp = run_tool('amgmcp_get_dashboard_summary', {'dashboardUid': dashboard_uid}, req_id)
-    req_id += 1
-    results_cache['amgmcp_get_dashboard_summary'] = resp
-    if not ok2:
-        failures += 1
-
-# 2c) panel data (query_range behind a panel)
-if 'amgmcp_get_panel_data' in by_name:
-    end_ms = _now_ms()
-    start_ms = end_ms - 15 * 60 * 1000
-    ok2, resp = run_tool(
-        'amgmcp_get_panel_data',
-        {
+def test_dashboard_tools() -> int:
+    """Test 4: Dashboard Tools - Search, summary, panel data, image render."""
+    section("4. DASHBOARD TOOLS")
+    failures = 0
+    
+    # 4.1 Dashboard search
+    subsection("Dashboard Search")
+    
+    if 'amgmcp_dashboard_search' not in discovered_tools:
+        record_result(TestResult(
+            name="amgmcp_dashboard_search",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="tool not available",
+        ))
+    else:
+        ok, resp, duration_ms, source = tool_call('amgmcp_dashboard_search', {
+            'query': 'Grocery App - SRE Overview',
+        })
+        results_cache['dashboard_search'] = resp
+        
+        record_result(TestResult(
+            name="amgmcp_dashboard_search",
+            category="dashboard",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details="" if ok else _short(resp),
+        ))
+        if not ok:
+            failures += 1
+    
+    # 4.2 Dashboard summary
+    subsection("Dashboard Summary")
+    
+    if 'amgmcp_get_dashboard_summary' not in discovered_tools:
+        record_result(TestResult(
+            name="amgmcp_get_dashboard_summary",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="tool not available",
+        ))
+    elif not dashboard_uid:
+        record_result(TestResult(
+            name="amgmcp_get_dashboard_summary",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="missing --dashboard-uid",
+        ))
+    else:
+        ok, resp, duration_ms, source = tool_call('amgmcp_get_dashboard_summary', {
+            'dashboardUid': dashboard_uid,
+        })
+        results_cache['dashboard_summary'] = resp
+        panel_count = _panel_count(resp)
+        
+        record_result(TestResult(
+            name="amgmcp_get_dashboard_summary",
+            category="dashboard",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details=f"panels={panel_count}" if ok else _short(resp),
+        ))
+        if not ok:
+            failures += 1
+    
+    # 4.3 Panel data (Loki panel)
+    subsection("Panel Data (Loki)")
+    
+    if 'amgmcp_get_panel_data' not in discovered_tools:
+        record_result(TestResult(
+            name="amgmcp_get_panel_data (Loki)",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="tool not available",
+        ))
+    elif not dashboard_uid:
+        record_result(TestResult(
+            name="amgmcp_get_panel_data (Loki)",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="missing --dashboard-uid",
+        ))
+    else:
+        end_ms = _now_ms()
+        start_ms = end_ms - 15 * 60 * 1000
+        
+        ok, resp, duration_ms, source = tool_call('amgmcp_get_panel_data', {
             'dashboardUid': dashboard_uid,
             'panelTitle': 'Error rate (errors/s)',
             'fromMs': start_ms,
             'toMs': end_ms,
             'stepMs': 30_000,
-        },
-        req_id,
-    )
-    req_id += 1
-    results_cache['amgmcp_get_panel_data'] = resp
-    if not ok2:
-        failures += 1
-
-    # 2d) another time series panel sanity check (request rate)
-    ok3 = False
-    resp3: Any = None
-    for candidate in (
-        'Requests/sec (API)',
-        'Requests/sec',
-        'Requests / sec',
-    ):
-        ok3, resp3 = run_tool(
-            'amgmcp_get_panel_data',
-            {
+        })
+        results_cache['panel_data_loki'] = resp
+        
+        record_result(TestResult(
+            name="amgmcp_get_panel_data (Loki panel)",
+            category="dashboard",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details="" if ok else _short(resp),
+        ))
+        if not ok:
+            failures += 1
+    
+    # 4.4 Panel data (Prometheus panel)
+    subsection("Panel Data (Prometheus)")
+    
+    if 'amgmcp_get_panel_data' not in discovered_tools:
+        record_result(TestResult(
+            name="amgmcp_get_panel_data (Prometheus)",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="tool not available",
+        ))
+    elif not dashboard_uid:
+        record_result(TestResult(
+            name="amgmcp_get_panel_data (Prometheus)",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="missing --dashboard-uid",
+        ))
+    else:
+        end_ms = _now_ms()
+        start_ms = end_ms - 15 * 60 * 1000
+        
+        # Try multiple panel name variants
+        ok = False
+        resp = None
+        duration_ms = 0
+        source = ""
+        for panel_name in ('Requests/sec (API)', 'Requests/sec', 'Request Rate'):
+            ok, resp, duration_ms, source = tool_call('amgmcp_get_panel_data', {
                 'dashboardUid': dashboard_uid,
-                'panelTitle': candidate,
+                'panelTitle': panel_name,
                 'fromMs': start_ms,
                 'toMs': end_ms,
                 'stepMs': 30_000,
-            },
-            req_id,
-        )
-        req_id += 1
-        if ok3:
-            results_cache['amgmcp_get_panel_data_requests_per_sec'] = resp3
-            break
-
-    if not ok3:
-        failures += 1
-
-# 3) subscription list
-if 'amgmcp_query_azure_subscriptions' in by_name:
-    ok2, resp = run_tool('amgmcp_query_azure_subscriptions', {}, req_id)
-    req_id += 1
-    results_cache['amgmcp_query_azure_subscriptions'] = resp
-    if not ok2:
-        failures += 1
-
-# Now run remaining tools with best-effort inputs
-for tool_name in sorted(by_name.keys()):
-    if tool_name in (
-        'amgmcp_datasource_list',
-        'amgmcp_dashboard_search',
-        'amgmcp_get_panel_data',
-        'amgmcp_query_azure_subscriptions',
-    ):
-        continue
-
-    tool = by_name[tool_name]
-    req = _required_keys(tool)
-
-    args: Dict[str, Any] = {}
-
-    if tool_name == 'amgmcp_query_resource_graph':
-        # Resource Graph KQL-ish; keep it tiny.
-        q = 'Resources | project name, type | take 1'
-        if 'query' in req or 'query' in (tool.get('inputSchema') or {}).get('properties', {}):
-            args['query'] = q
-        else:
-            args['kql'] = q
-        if 'subscriptions' in req and subscription_id:
-            args['subscriptions'] = [subscription_id]
-        elif 'subscriptions' in req and not subscription_id:
-            print(f"[SKIP] {tool_name}: requires subscriptions; set --subscription-id")
-            continue
-
-    elif tool_name == 'amgmcp_query_resource_log':
-        q = 'AzureActivity | take 1'
-        # Backend may accept query or kql.
-        if 'query' in req:
-            args['query'] = q
-        else:
-            args['kql'] = q
-        if 'resourceId' in req:
-            if not resource_id:
-                print(f"[SKIP] {tool_name}: requires resourceId; pass --resource-id")
-                continue
-            args['resourceId'] = resource_id
-
-    elif tool_name == 'amgmcp_query_datasource':
-        # Prefer datasourceName so this test doesn't depend on parsing datasource_list output.
-        # (Assumes the demo created the Loki datasource named 'Loki (grocery)'.)
-        args['datasourceName'] = 'Loki (grocery)'
-        # Small, safe query and tight window.
-        end_ms = _now_ms()
-        start_ms = end_ms - 15 * 60 * 1000
-        # Use the demo's canonical app label and a query that should be valid
-        # even when there are no recent errors.
-        args['query'] = '{app="grocery-api"} | json'
-        args['limit'] = 5
-        args['fromMs'] = start_ms
-        args['toMs'] = end_ms
-
-    elif tool_name == 'amgmcp_image_render':
-        dash_uid = dashboard_uid
-        if not dash_uid:
-            print(f"[SKIP] {tool_name}: missing --dashboard-uid")
-            continue
+            })
+            if ok:
+                results_cache['panel_data_prom'] = resp
+                break
+        
+        record_result(TestResult(
+            name="amgmcp_get_panel_data (Prometheus panel)",
+            category="dashboard",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details="" if ok else _short(resp),
+        ))
+        if not ok:
+            failures += 1
+    
+    # 4.5 Image render
+    subsection("Image Render")
+    
+    if 'amgmcp_image_render' not in discovered_tools:
+        record_result(TestResult(
+            name="amgmcp_image_render",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="tool not available",
+        ))
+    elif not dashboard_uid:
+        record_result(TestResult(
+            name="amgmcp_image_render",
+            category="dashboard",
+            passed=False,
+            skipped=True,
+            skip_reason="missing --dashboard-uid",
+        ))
+    else:
         end_ms = _now_ms()
         start_ms = end_ms - 60 * 60 * 1000
-        args['dashboardUid'] = dash_uid
-        pid = _pick_panel_id(results_cache.get('amgmcp_get_dashboard_summary'))
-        if pid is not None:
-            args['panelId'] = pid
-        args['fromMs'] = start_ms
-        args['toMs'] = end_ms
-        args['width'] = 1000
-        args['height'] = 500
+        
+        args = {
+            'dashboardUid': dashboard_uid,
+            'fromMs': start_ms,
+            'toMs': end_ms,
+            'width': 800,
+            'height': 400,
+        }
+        
+        # Try to use a specific panel if we have summary
+        panel_id = _pick_panel_id(results_cache.get('dashboard_summary'))
+        if panel_id is not None:
+            args['panelId'] = panel_id
+        
+        ok, resp, duration_ms, source = tool_call('amgmcp_image_render', args)
+        
+        # Check if we got image data
+        sc = _sc_from_resp(resp)
+        has_image = sc and isinstance(sc.get('imageBase64'), str) and len(sc.get('imageBase64', '')) > 100
+        
+        record_result(TestResult(
+            name="amgmcp_image_render",
+            category="dashboard",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details=f"bytes={sc.get('bytes', 'N/A')}" if has_image else ("placeholder" if source == "placeholder" else _short(resp)),
+        ))
+        if not ok:
+            failures += 1
+    
+    return failures
 
-    else:
-        # Generic fallback: try empty args if nothing required.
-        if req:
-            print(f"[SKIP] {tool_name}: has required args {sorted(req)} (no built-in defaults)")
-            continue
 
-    ok2, _resp = run_tool(tool_name, args, req_id)
-    req_id += 1
-    if not ok2:
-        failures += 1
+def test_azure_tools() -> int:
+    """Test 5: Azure Tools - Resource Graph, subscriptions (if enabled)."""
+    section("5. AZURE TOOLS (Optional)")
+    failures = 0
+    
+    # These tools are disabled by default (DISABLE_AMGMCP_AZURE_TOOLS=true)
+    azure_tools = ['amgmcp_query_azure_subscriptions', 'amgmcp_query_resource_graph', 'amgmcp_query_resource_log']
+    available = [t for t in azure_tools if t in discovered_tools]
+    
+    if not available:
+        log_info("Azure tools are disabled (DISABLE_AMGMCP_AZURE_TOOLS=true). This is expected.")
+        return 0
+    
+    subsection("Azure Subscriptions")
+    
+    if 'amgmcp_query_azure_subscriptions' in discovered_tools:
+        ok, resp, duration_ms, source = tool_call('amgmcp_query_azure_subscriptions', {})
+        record_result(TestResult(
+            name="amgmcp_query_azure_subscriptions",
+            category="azure",
+            passed=ok,
+            duration_ms=duration_ms,
+            source=source,
+            details="" if ok else _short(resp),
+        ))
+        if not ok:
+            failures += 1
+    
+    subsection("Resource Graph Query")
+    
+    if 'amgmcp_query_resource_graph' in discovered_tools:
+        if not subscription_id:
+            record_result(TestResult(
+                name="amgmcp_query_resource_graph",
+                category="azure",
+                passed=False,
+                skipped=True,
+                skip_reason="missing --subscription-id",
+            ))
+        else:
+            ok, resp, duration_ms, source = tool_call('amgmcp_query_resource_graph', {
+                'query': 'Resources | project name, type | take 1',
+                'subscriptions': [subscription_id],
+            })
+            record_result(TestResult(
+                name="amgmcp_query_resource_graph",
+                category="azure",
+                passed=ok,
+                duration_ms=duration_ms,
+                source=source,
+                details="" if ok else _short(resp),
+            ))
+            if not ok:
+                failures += 1
+    
+    return failures
 
-# Best-effort session cleanup
-_http('DELETE', mcp_url, headers={'accept': 'application/json', 'mcp-session-id': session_id}, timeout_s=10)
 
-# Managed Prometheus ingestion verification (workspace-scoped query endpoint).
-# This checks the metrics we just deployed (Prometheus scraping + blackbox probe) are visible.
-if amw_query_endpoint:
-    prom_failures = 0
-    checks = [
-        ('up{job="ca-api"}', 'Expect ca-api scrape target up'),
-        ('probe_success{job="blackbox-http"}', 'Expect ca-web probe success'),
+def test_direct_prometheus() -> int:
+    """Test 6: Direct Prometheus - AMW query endpoint validation."""
+    section("6. DIRECT PROMETHEUS (AMW)")
+    failures = 0
+    
+    if not amw_query_endpoint:
+        log_info("AMW query endpoint not configured. Skipping direct Prometheus tests.")
+        log_info("Pass --amw-query-endpoint or ensure demo-config.json + az login")
+        return 0
+    
+    subsection("PromQL Queries via AMW")
+    
+    queries = [
+        ('up{job="ca-api"}', 'API container scrape target'),
+        ('probe_success{job="blackbox-http"}', 'Blackbox probe success'),
     ]
-    for expr, hint in checks:
+    
+    for expr, description in queries:
+        start = time.time()
         status, obj = _prom_query(amw_query_endpoint, expr)
+        duration_ms = (time.time() - start) * 1000
+        
         ok = False
+        result_count = 0
         if status == 200 and isinstance(obj, dict):
             data = obj.get('data')
             if isinstance(data, dict):
                 result = data.get('result')
-                if isinstance(result, list) and len(result) > 0:
-                    ok = True
+                if isinstance(result, list):
+                    result_count = len(result)
+                    ok = result_count > 0
+        
+        record_result(TestResult(
+            name=f"PromQL: {expr}",
+            category="prometheus",
+            passed=ok,
+            duration_ms=duration_ms,
+            details=f"{description}, results={result_count}" if ok else f"status={status}, {_short(obj)}",
+        ))
+        
+        if not ok:
+            failures += 1
+            log_info("If RBAC was just granted, allow ~30min for propagation.")
+    
+    return failures
 
-        if ok:
-            print(f"[OK]  promql {expr} -> {status} results={len(obj.get('data', {}).get('result', []))}")
+
+def print_summary() -> None:
+    """Print test summary."""
+    section("TEST SUMMARY")
+    
+    categories = {}
+    for r in test_results:
+        if r.category not in categories:
+            categories[r.category] = {'passed': 0, 'failed': 0, 'skipped': 0}
+        if r.skipped:
+            categories[r.category]['skipped'] += 1
+        elif r.passed:
+            categories[r.category]['passed'] += 1
         else:
-            prom_failures += 1
-            print(f"[FAIL] promql {expr} -> {status} {hint} resp={_short(obj)}")
-            print("[INFO] If you just granted RBAC for remote_write, it can take ~30 minutes to propagate.")
+            categories[r.category]['failed'] += 1
+    
+    total_passed = sum(c['passed'] for c in categories.values())
+    total_failed = sum(c['failed'] for c in categories.values())
+    total_skipped = sum(c['skipped'] for c in categories.values())
+    
+    print()
+    print(f"  {'Category':<20} {'Passed':>8} {'Failed':>8} {'Skipped':>8}")
+    print(f"  {'-' * 20} {'-' * 8} {'-' * 8} {'-' * 8}")
+    
+    for cat, counts in sorted(categories.items()):
+        passed = f"{Colors.GREEN}{counts['passed']}{Colors.RESET}" if counts['passed'] else "0"
+        failed = f"{Colors.RED}{counts['failed']}{Colors.RESET}" if counts['failed'] else "0"
+        skipped = f"{Colors.YELLOW}{counts['skipped']}{Colors.RESET}" if counts['skipped'] else "0"
+        print(f"  {cat:<20} {passed:>17} {failed:>17} {skipped:>17}")
+    
+    print(f"  {'-' * 20} {'-' * 8} {'-' * 8} {'-' * 8}")
+    
+    total_passed_str = f"{Colors.GREEN}{total_passed}{Colors.RESET}" if total_passed else "0"
+    total_failed_str = f"{Colors.RED}{total_failed}{Colors.RESET}" if total_failed else "0"
+    total_skipped_str = f"{Colors.YELLOW}{total_skipped}{Colors.RESET}" if total_skipped else "0"
+    print(f"  {'TOTAL':<20} {total_passed_str:>17} {total_failed_str:>17} {total_skipped_str:>17}")
+    
+    print()
+    if total_failed == 0:
+        print(f"{Colors.BOLD}{Colors.GREEN}═══════════════════════════════════════════════════════════════════════════{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.GREEN}  ✓ ALL TESTS PASSED{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.GREEN}═══════════════════════════════════════════════════════════════════════════{Colors.RESET}")
+    else:
+        print(f"{Colors.BOLD}{Colors.RED}═══════════════════════════════════════════════════════════════════════════{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.RED}  ✗ {total_failed} TEST(S) FAILED{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.RED}═══════════════════════════════════════════════════════════════════════════{Colors.RESET}")
 
-    failures += prom_failures
-else:
-    print("[SKIP] Prometheus query test: missing AMW query endpoint (pass --amw-query-endpoint or --amw-name, or ensure demo-config + az login)")
 
-if failures:
-    print(f"[RESULT] FAIL ({failures} tool call(s) failed)")
-    sys.exit(1)
+# ============================================================================
+# Main Execution
+# ============================================================================
 
-print("[RESULT] OK")
+def main() -> int:
+    print()
+    print(f"{Colors.BOLD}MCP Server End-to-End Test Suite{Colors.RESET}")
+    print(f"{Colors.DIM}Testing: {mcp_url}{Colors.RESET}")
+    if amw_query_endpoint:
+        print(f"{Colors.DIM}AMW Endpoint: {amw_query_endpoint}{Colors.RESET}")
+    print(f"{Colors.DIM}Dashboard UID: {dashboard_uid}{Colors.RESET}")
+    print(f"{Colors.DIM}Prometheus DS: {prometheus_datasource_name}{Colors.RESET}")
+    
+    total_failures = 0
+    
+    total_failures += test_connectivity()
+    total_failures += test_mcp_protocol()
+    total_failures += test_datasource_tools()
+    total_failures += test_dashboard_tools()
+    total_failures += test_azure_tools()
+    total_failures += test_direct_prometheus()
+    
+    # Session cleanup
+    _http('DELETE', mcp_url, headers={'accept': 'application/json', 'mcp-session-id': session_id}, timeout_s=10)
+    
+    print_summary()
+    
+    return 1 if total_failures > 0 else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
 PY

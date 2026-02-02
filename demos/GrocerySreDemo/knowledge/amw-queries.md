@@ -1,125 +1,179 @@
-# AMW / Prometheus Query Reference
+# Prometheus / AMW Query Reference — Grocery API (SRE Agent)
 
-Use this reference to query **Prometheus metrics** stored in the **Azure Monitor Workspace (Managed Prometheus)** for this environment.
+This is an **SRE Agent knowledge file** providing PromQL queries for diagnosing Grocery API issues via Azure Monitor Workspace (Managed Prometheus).
 
-You can run these queries in:
+---
 
-- **Azure Managed Grafana** → *Explore* → select the Prometheus datasource (typically **Prometheus (AMW)**)
-- MCP tool `amgmcp_query_datasource` (datasourceName **Prometheus (AMW)**) with a time window (`fromMs`/`toMs`)
+## TL;DR for Agents
 
-## Apps / Jobs in This Environment
+| Symptom                           | First Query |
+|-----------------------------------|-------------|
+| Is the API running?               | `up{job="ca-api"}` |
+| High error rate (5xx)             | `sum(rate(grocery_http_request_duration_seconds_count{job="ca-api",status=~"5.."}[5m]))` |
+| Supplier rate limit hits          | `sum(rate(grocery_supplier_rate_limit_hits_total[5m]))` |
+| Request throughput                | `sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))` |
+| P95 latency                       | `histogram_quantile(0.95, sum by (le) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m])))` |
 
-| Component | `job` label | What it represents |
-|----------|-------------|--------------------|
-| Grocery API | `ca-api` | Metrics scraped from the Grocery API Container App |
-| HTTP probe | `blackbox-http` | Blackbox exporter probe metrics for HTTP endpoint health |
+---
 
-Tip: start with `up{job="…"}` to confirm series exist.
+## Quick Facts
 
-## Quick Sanity Checks
+- **Jobs**: `ca-api` (Grocery API), `blackbox-http` (blackbox exporter)
+- **Metric prefix**: `grocery_` (custom app metrics)
+- **Datasource**: `Prometheus (AMW)` in Grafana
+- **Rate limit window**: 60 seconds (default `RATE_LIMIT_RESET_MS`)
+
+---
+
+## Symptom → Query Decision Tree
+
+### 1. Is the API healthy?
 
 ```promql
-# Are targets being scraped?
-up
-
-# Is the Grocery API target up?
+# API is running (1 = up, 0 = down)
 up{job="ca-api"}
 
-# Is the HTTP probe succeeding?
+# Blackbox HTTP probe result
 probe_success{job="blackbox-http"}
+
+# Blackbox probe duration
+probe_duration_seconds{job="blackbox-http"}
 ```
 
-## Availability & Error Signals
+### 2. HTTP traffic overview (RED method)
 
+**Rate** (requests/sec):
 ```promql
-# % availability (assuming probe_success=1 on success)
-100 * avg_over_time(probe_success{job="blackbox-http"}[5m])
-
-# Detect scrape gaps (missing data is often the first clue)
-absent_over_time(up{job="ca-api"}[5m])
-
-# Container restarts (if kube-state-metrics is present)
-increase(kube_pod_container_status_restarts_total[15m])
-```
-
-## HTTP Traffic & Errors
-
-In this demo, the API exports HTTP server metrics with a `grocery_` prefix.
-
-```promql
-# Requests/sec (overall)
+# Total RPS
 sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
 
-# Requests/sec by status
+# RPS by HTTP status
 sum by (status) (rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
 
-# 5xx error rate
-sum(rate(grocery_http_request_duration_seconds_count{job="ca-api", status=~"5.."}[5m]))
+# RPS by route
+sum by (route) (rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
+```
 
-# Error ratio
+**Errors** (5xx rate):
+```promql
+# 5xx errors/sec
+sum(rate(grocery_http_request_duration_seconds_count{job="ca-api",status=~"5.."}[5m]))
+
+# 5xx error percentage
 (
-  sum(rate(grocery_http_request_duration_seconds_count{job="ca-api", status=~"5.."}[5m]))
-)
-/
-(
+  sum(rate(grocery_http_request_duration_seconds_count{job="ca-api",status=~"5.."}[5m]))
+  /
   sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
-)
+) * 100
 ```
 
-If you have different instrumentation enabled, you may also see other common HTTP metric name patterns (for example `http_requests_total` or `http_server_request_duration_seconds_count`).
+**Duration** (latency):
+```promql
+# P50 latency
+histogram_quantile(0.50, sum by (le) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m])))
 
-## Latency (p50/p95/p99)
+# P95 latency
+histogram_quantile(0.95, sum by (le) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m])))
 
-The demo exports a request duration histogram (`grocery_http_request_duration_seconds_bucket`).
+# P99 latency
+histogram_quantile(0.99, sum by (le) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m])))
+
+# Latency by route
+histogram_quantile(0.95, sum by (le, route) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m])))
+```
+
+### 3. Supplier rate limiting (root cause for 503s)
 
 ```promql
-# p95 latency
-histogram_quantile(
-  0.95,
-  sum by (le) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m]))
-)
+# Rate limit hits/sec (key indicator!)
+sum(rate(grocery_supplier_rate_limit_hits_total[5m]))
 
-# p99 latency
-histogram_quantile(
-  0.99,
-  sum by (le) (rate(grocery_http_request_duration_seconds_bucket{job="ca-api"}[5m]))
-)
+# Total rate limit hits (counter)
+grocery_supplier_rate_limit_hits_total
+
+# Supplier requests by status (success vs rate_limited)
+sum by (status) (rate(grocery_supplier_requests_total[5m]))
+
+# Current request count in rate limit window
+grocery_supplier_request_count
 ```
 
-## Container / Platform Metrics (Kubernetes)
-
-If you enabled Container Apps → Managed Prometheus scraping, you may have some kube / cAdvisor metrics available.
+### 4. Resource utilization
 
 ```promql
-# CPU usage (cores) by pod (if container_cpu_usage_seconds_total is present)
-sum by (pod) (rate(container_cpu_usage_seconds_total[5m]))
+# CPU usage (cores)
+sum(rate(grocery_process_cpu_seconds_total{job="ca-api"}[5m]))
 
-# Memory working set by pod
-sum by (pod) (container_memory_working_set_bytes)
+# Memory usage (bytes)
+grocery_process_resident_memory_bytes{job="ca-api"}
 
-# Throttling (if present)
-sum(rate(container_cpu_cfs_throttled_seconds_total[5m]))
+# Open file descriptors
+grocery_process_open_fds{job="ca-api"}
 ```
 
-## Useful Patterns
+---
 
-```promql
-# Top-N by rate (example: busiest endpoints if route labels exist)
-topk(10, sum by (route) (rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m])))
+## Key Metrics Reference
 
-# Compare two time windows (current vs 1h ago)
-(
-  sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))
-)
--
-(
-  sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m] offset 1h))
-)
+| Metric | Type | Description |
+|--------|------|-------------|
+| `grocery_http_request_duration_seconds_count` | Counter | HTTP request count (by method, route, status) |
+| `grocery_http_request_duration_seconds_bucket` | Histogram | HTTP latency buckets |
+| `grocery_supplier_requests_total` | Counter | Supplier API calls (by status: success/rate_limited) |
+| `grocery_supplier_rate_limit_hits_total` | Counter | Supplier 429 responses received |
+| `grocery_supplier_request_count` | Gauge | Current requests in rate limit window |
+| `grocery_process_cpu_seconds_total` | Counter | CPU time consumed |
+| `grocery_process_resident_memory_bytes` | Gauge | Memory usage |
+| `up` | Gauge | Target health (1 = up) |
+| `probe_success` | Gauge | Blackbox probe result (1 = success) |
+
+---
+
+## Alerting Thresholds (Guidance)
+
+| Condition | Suggested Threshold | Severity |
+|-----------|---------------------|----------|
+| API down | `up{job="ca-api"} == 0` for 2m | Critical |
+| High 5xx rate | `5xx_percentage > 5%` for 5m | Warning |
+| High 5xx rate | `5xx_percentage > 20%` for 5m | Critical |
+| Supplier rate limit | `rate(grocery_supplier_rate_limit_hits_total[5m]) > 0` | Warning |
+| P95 latency | `> 2s` for 5m | Warning |
+
+---
+
+## Correlation with Logs
+
+Use these metrics alongside Loki queries (see [loki-queries.md](loki-queries.md)):
+
+| Metric Signal | Correlated Log Query |
+|---------------|----------------------|
+| `grocery_supplier_rate_limit_hits_total` increasing | `{app="grocery-api"} \| json \| errorCode="SUPPLIER_RATE_LIMIT_429"` |
+| `status=~"5.."` requests increasing | `{app="grocery-api", level="error"}` |
+| Inventory route errors | `{app="grocery-api"} \| json \| event="inventory_check_failed"` |
+
+---
+
+## Dashboard Panels
+
+The Grocery SRE Overview dashboard (UID: `afbppudwbhl34b`) includes these Prometheus panels:
+
+| Panel Title | Query | Type |
+|-------------|-------|------|
+| Requests/sec (API) | `sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))` | timeseries |
+| CPU usage (cores) | `sum(rate(grocery_process_cpu_seconds_total{job="ca-api"}[5m]))` | stat |
+
+To retrieve panel data programmatically:
 ```
+amgmcp_get_panel_data(panelTitle="Requests/sec (API)")
+amgmcp_get_panel_data(panelTitle="CPU usage (cores)")
+```
+
+---
 
 ## Troubleshooting Checklist
 
-- **No data returned**: confirm the datasource is correct and `up{job="ca-api"}` returns series.
-- **403 from AMW direct queries**: the calling identity needs **Monitoring Data Reader** on the Azure Monitor Workspace.
-- **Gaps / flapping**: check `absent_over_time(up{job="ca-api"}[5m])` and compare with deployment/revision events.
-- **Metric name mismatch**: use Grafana Explore’s metric browser to find the actual metric names and labels, then adapt queries above.
+1. **Verify connectivity**: `up{job="ca-api"}` should return `1`
+2. **Check request volume**: `sum(rate(grocery_http_request_duration_seconds_count{job="ca-api"}[5m]))` > 0
+3. **Look for errors**: `sum(rate(...{status=~"5.."}[5m]))` — any 5xx?
+4. **Check supplier status**: `rate(grocery_supplier_rate_limit_hits_total[5m])` — hitting limits?
+5. **Correlate with logs**: Use LogQL queries from [loki-queries.md](loki-queries.md)
