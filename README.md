@@ -41,6 +41,7 @@ This lab deploys:
 | Azure Health Check (scheduled anomaly detection → Teams) | [demos/AzureHealthCheck/](demos/AzureHealthCheck/) | [demos/AzureHealthCheck/README.md](demos/AzureHealthCheck/README.md), [demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml](demos/AzureHealthCheck/azurehealthcheck-subagent-simple.yaml) | [scripts/70-test-teams-webhook.sh](scripts/70-test-teams-webhook.sh) → [scripts/71-send-sample-anomaly.sh](scripts/71-send-sample-anomaly.sh) → (optional) [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) |
 | ServiceNow Incident Automation (Azure Monitor alerts → ServiceNow incident → SRE Agent subagent) | [demos/ServiceNowAzureResourceHandler/](demos/ServiceNowAzureResourceHandler/) | [demos/ServiceNowAzureResourceHandler/README.md](demos/ServiceNowAzureResourceHandler/README.md), [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml), [demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep](demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep), [demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep](demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep) | [scripts/50-deploy-logic-app.sh](scripts/50-deploy-logic-app.sh) → [scripts/50-deploy-alert-rules.sh](scripts/50-deploy-alert-rules.sh) → [scripts/63-enable-memory-errors.sh](scripts/63-enable-memory-errors.sh) (or [scripts/61-enable-cpu-stress.sh](scripts/61-enable-cpu-stress.sh)) → [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) → verify with [scripts/61-check-memory.sh](scripts/61-check-memory.sh) → cleanup: [scripts/64-disable-memory-errors.sh](scripts/64-disable-memory-errors.sh) / [scripts/62-disable-cpu-stress.sh](scripts/62-disable-cpu-stress.sh) |
 | Proactive Reliability (App Service slot swap → expected rollback) | [demos/ProactiveReliabilityAppService/](demos/ProactiveReliabilityAppService/) | [demos/ProactiveReliabilityAppService/README.md](demos/ProactiveReliabilityAppService/README.md), [demos/ProactiveReliabilityAppService/demo-config.json](demos/ProactiveReliabilityAppService/demo-config.json), [demos/ProactiveReliabilityAppService/SubAgents/](demos/ProactiveReliabilityAppService/SubAgents/) | [demos/ProactiveReliabilityAppService/scripts/01-setup-demo.sh](demos/ProactiveReliabilityAppService/scripts/01-setup-demo.sh) → [demos/ProactiveReliabilityAppService/scripts/02-run-demo.sh](demos/ProactiveReliabilityAppService/scripts/02-run-demo.sh) → (optional) [demos/ProactiveReliabilityAppService/scripts/03-reset-demo.sh](demos/ProactiveReliabilityAppService/scripts/03-reset-demo.sh) |
+| Grocery SRE Demo (Container Apps + Managed Grafana + MCP) | [demos/GrocerySreDemo/](demos/GrocerySreDemo/) | [demos/GrocerySreDemo/README.md](demos/GrocerySreDemo/README.md), [demos/GrocerySreDemo/demo-config.json](demos/GrocerySreDemo/demo-config.json) | [demos/GrocerySreDemo/scripts/01-setup-demo.sh](demos/GrocerySreDemo/scripts/01-setup-demo.sh) → [demos/GrocerySreDemo/scripts/02-build-and-deploy-containers.sh](demos/GrocerySreDemo/scripts/02-build-and-deploy-containers.sh) → [demos/GrocerySreDemo/scripts/03-smoke-and-trigger.sh](demos/GrocerySreDemo/scripts/03-smoke-and-trigger.sh) |
 
 ## 📋 Architecture
 
@@ -68,7 +69,7 @@ This lab deploys:
 
 ### RBAC Configuration
 
-The SRE Agent's managed identity has **High access** with these roles scoped **only** to `rg-octopets-lab`:
+The SRE Agent's managed identity has **High access** with these roles scoped **only** to the Octopets resource group (`OCTOPETS_RG_NAME`):
 - `Contributor` - Enables remediation actions
 - `Reader` - Read access to resources
 - `Log Analytics Contributor` - Access to logs for diagnostics
@@ -139,6 +140,11 @@ Security constraints:
    Verification:
    - Open the `OCTOPETS_FE_URL` in a browser; the frontend should load.
 
+4b. **(Optional) OpenAPI smoke test**
+   ```bash
+   scripts/32-openapi-smoke-test.sh
+   ```
+
 5. **Ensure SRE Agent reference repo is present**
    ```bash
    # Only needed if external/sre-agent is missing
@@ -181,7 +187,7 @@ Then follow the same happy-path deployment sequence above.
 ├── .env                    # Environment configuration (not in git)
 ├── .env.example           # Template for environment variables
 ├── specs/
-│   ├── specs.md           # Complete lab specification
+│   ├── EnvSetupSpecs.md   # Complete lab specification
 │   └── IncidentAutomationServiceNow.md  # ServiceNow demo spec
 ├── scripts/
 │   ├── 10-clone-repos.sh  # Bootstrap external repos (optional)
@@ -189,6 +195,7 @@ Then follow the same happy-path deployment sequence above.
 │   ├── 20-az-login.sh     # Azure authentication
 │   ├── 30-deploy-octopets.sh        # Deploy Octopets infrastructure (Azure CLI + Bicep, subscription scope)
 │   ├── 31-deploy-octopets-containers.sh  # Build & deploy containers (ACR remote builds, no Docker)
+│   ├── 32-openapi-smoke-test.sh     # OpenAPI sanity checks for Octopets API
 │   ├── 40-deploy-sre-agent.sh       # Deploy SRE Agent
 │   ├── 50-deploy-alert-rules.sh     # Deploy ServiceNow integration
 │   ├── load-env.sh        # Load environment variables
@@ -251,21 +258,35 @@ AZURE_TENANT_ID=<your-tenant-id>
 AZURE_SUBSCRIPTION_ID=<your-subscription-id>
 AZURE_LOCATION=swedencentral
 
+# Proactive Reliability Demo (App Service slot swap)
+PROACTIVE_DEMO_RG_NAME=rg-sre-proactive-demo
+PROACTIVE_DEMO_APP_SERVICE_NAME=<unique-app-service-name>
+
 # Octopets Application
 OCTOPETS_ENV_NAME=octopets-lab
-OCTOPETS_RG_NAME=rg-octopets-lab
+OCTOPETS_RG_NAME=<OCTOPETS_RESOURCE_GROUP_NAME>
+
+# Optional outputs captured after scripts/31-deploy-octopets-containers.sh
+OCTOPETS_API_URL=<OCTOPETS_API_URL>
+OCTOPETS_FE_URL=<OCTOPETS_FE_URL>
 
 # SRE Agent
 SRE_AGENT_RG_NAME=rg-sre-agent-lab
 SRE_AGENT_NAME=sre-agent-lab
 SRE_AGENT_ACCESS_LEVEL=High
-SRE_AGENT_TARGET_RESOURCE_GROUPS=rg-octopets-lab
+SRE_AGENT_TARGET_RESOURCE_GROUPS=<OCTOPETS_RESOURCE_GROUP_NAME>
+
+# ServiceNow Webhook URL (auto-populated after deploying the Logic App)
+SERVICENOW_WEBHOOK_URL=<AUTO_POPULATED_AFTER_ALERT_DEPLOYMENT>
 
 # ServiceNow Integration (Optional - for demo)
 SERVICENOW_INSTANCE=dev12345
 SERVICENOW_USERNAME=admin
 SERVICENOW_PASSWORD=<password>
 INCIDENT_NOTIFICATION_EMAIL=your-email@example.com
+
+# Teams Webhook (Power Automate)
+TEAMS_WEBHOOK_URL=<YOUR_TEAMS_WEBHOOK_URL>
 ```
 
 ## 🛠️ Technical Details
