@@ -76,18 +76,63 @@ if az containerapp show -g "$rg_name" -n ca-loki --query name -o tsv >/dev/null 
   fi
 fi
 
+# Optional AMW Prometheus direct query fallback: discover AMW query endpoint if present.
+amw_query_endpoint=""
+amw_name="$(az resource list -g "$rg_name" --resource-type Microsoft.Monitor/accounts --query "[0].name" -o tsv 2>/dev/null || true)"
+if [[ -n "$amw_name" ]]; then
+  amw_query_endpoint="$(az resource show -g "$rg_name" -n "$amw_name" --resource-type Microsoft.Monitor/accounts --query properties.metrics.prometheusQueryEndpoint -o tsv 2>/dev/null || true)"
+  if [[ -n "$amw_query_endpoint" ]]; then
+    amw_query_endpoint="${amw_query_endpoint%/}"
+    log_info "Detected AMW Prometheus query endpoint: $amw_query_endpoint"
+  fi
+fi
+
+# Optional Prometheus datasource UID: used for Grafana datasource-proxy queries.
+prometheus_datasource_name="Prometheus (AMW)"
+prometheus_datasource_uid=""
+prometheus_datasource_uid="$(az grafana data-source list -g "$rg_name" -n "$grafana_name" --query "[?name=='$prometheus_datasource_name'].uid | [0]" -o tsv 2>/dev/null || true)"
+if [[ -n "$prometheus_datasource_uid" ]]; then
+  log_info "Detected Grafana Prometheus datasource UID: $prometheus_datasource_uid"
+fi
+
 az deployment group create \
   --name "$deployment_name" \
   --resource-group "$rg_name" \
   --template-file "$template" \
-  --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" lokiEndpoint="$loki_endpoint" imageTag="$image_tag" deploymentStamp="$deployment_name" \
-  --query "properties.outputs" -o json
+  --parameters location="$location" environmentId="$environment_id" acrName="$acr_name" grafanaName="$grafana_name" grafanaEndpoint="$grafana_endpoint" lokiEndpoint="$loki_endpoint" amwQueryEndpoint="$amw_query_endpoint" prometheusDatasourceUid="$prometheus_datasource_uid" imageTag="$image_tag" deploymentStamp="$deployment_name" \
+  --query "properties.outputs" -o json > /tmp/mcp-proxy-deploy-outputs.json
+
+principal_id="$(python3 -c "import json; print(json.load(open('/tmp/mcp-proxy-deploy-outputs.json')).get('principalId', {}).get('value', ''))")"
+mcp_url="$(python3 -c "import json; print(json.load(open('/tmp/mcp-proxy-deploy-outputs.json')).get('mcpUrl', {}).get('value', ''))")"
+
+# If AMW is present and we are using AMW direct PromQL fallback, the Container App's managed identity
+# must have permission to query Prometheus metrics.
+if [[ -n "$amw_name" && -n "$amw_query_endpoint" && -n "$principal_id" ]]; then
+  log_step "Granting MCP proxy MI access to AMW Prometheus metrics"
+  amw_id="$(az resource show -g "$rg_name" -n "$amw_name" --resource-type Microsoft.Monitor/accounts --query id -o tsv)"
+
+  if [[ -z "$amw_id" ]]; then
+    die "Unable to resolve AMW resource ID for $amw_name"
+  fi
+
+  existing_count="$(az role assignment list --assignee "$principal_id" --scope "$amw_id" --query "[?roleDefinitionName=='Monitoring Data Reader'] | length(@)" -o tsv 2>/dev/null || echo 0)"
+  if [[ "$existing_count" == "0" ]]; then
+    az role assignment create --assignee-object-id "$principal_id" --assignee-principal-type ServicePrincipal --role "Monitoring Data Reader" --scope "$amw_id" --output none
+    log_ok "Assigned 'Monitoring Data Reader' on AMW to principalId=$principal_id"
+  else
+    log_ok "Role assignment already present for principalId=$principal_id"
+  fi
+fi
 
 fqdn="$(az containerapp show -g "$rg_name" -n ca-mcp-amg-proxy --query properties.configuration.ingress.fqdn -o tsv)"
 
 log_ok "Deployed. MCP endpoint: https://$fqdn/mcp"
 log_info "Transport: streamable-http"
 log_info "Auth: managed identity (Grafana Viewer RBAC on the Managed Grafana resource)"
+
+if [[ -n "$mcp_url" ]]; then
+  log_info "Deployment output MCP URL: $mcp_url"
+fi
 
 log_step "Waiting for revision to become Healthy"
 latest_rev="$(az containerapp show -g "$rg_name" -n ca-mcp-amg-proxy --query properties.latestRevisionName -o tsv)"

@@ -5,6 +5,16 @@ param grafanaName string
 param grafanaEndpoint string
 @description('Optional Loki base URL for direct query fallback (e.g., https://ca-loki.<stamp>.<region>.azurecontainerapps.io).')
 param lokiEndpoint string = ''
+@description('Optional Azure Monitor Workspace Prometheus query endpoint (e.g., https://<amw>.<region>.prometheus.monitor.azure.com). Used for Prometheus direct-query fallback.')
+param amwQueryEndpoint string = ''
+@description('Optional Grafana datasource UID for the AMW Prometheus datasource (e.g., efbya46rp2ltsc). Used to query Prometheus via Grafana datasource proxy without requiring AMW permissions on this proxy identity.')
+param prometheusDatasourceUid string = ''
+@description('Timeout in seconds for querying Prometheus via Grafana datasource proxy (server-side auth).')
+param promGrafanaProxyTimeoutS int = 10
+@description('Timeout in seconds for querying Prometheus directly from the Azure Monitor Workspace query endpoint.')
+param amwPromqlTimeoutS int = 15
+@description('Opt-in: allow using the amg-mcp stdio backend for Prometheus queries (disabled by default due to potential stalls/timeouts).')
+param enableBackendPrometheus bool = false
 @description('Name of the Container App to deploy (you can change this to run multiple variants).')
 param appName string = 'ca-mcp-amg-proxy'
 @description('ACR image tag for the amg-mcp-http-proxy container image.')
@@ -76,6 +86,26 @@ resource mcpAmgProxyApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'LOKI_ENDPOINT'
               value: lokiEndpoint
+            }
+            {
+              name: 'AMW_QUERY_ENDPOINT'
+              value: amwQueryEndpoint
+            }
+            {
+              name: 'PROMETHEUS_DATASOURCE_UID'
+              value: prometheusDatasourceUid
+            }
+            {
+              name: 'PROM_GRAFANA_PROXY_TIMEOUT_S'
+              value: string(promGrafanaProxyTimeoutS)
+            }
+            {
+              name: 'AMW_PROMQL_TIMEOUT_S'
+              value: string(amwPromqlTimeoutS)
+            }
+            {
+              name: 'ENABLE_BACKEND_PROMETHEUS'
+              value: string(enableBackendPrometheus)
             }
             {
               name: 'AMG_MCP_TOOL_TIMEOUT_S'

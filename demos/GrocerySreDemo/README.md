@@ -102,6 +102,14 @@ cd demos/GrocerySreDemo
 ./scripts/07-create-custom-grafana-dashboard.sh --dashboard scene4
 ```
 
+Optional: if you deployed Prometheus metrics into an Azure Monitor Workspace (Managed Prometheus) and want to run PromQL in Grafana,
+create/update a Prometheus datasource pointing at the AMW query endpoint:
+
+```bash
+cd demos/GrocerySreDemo
+./scripts/07-create-custom-grafana-dashboard.sh --prometheus-only
+```
+
 ### Scene 5 (optional) — Deep log forensics with Loki
 
 - If Loki is deployed and the API is configured to push logs, use `knowledge/loki-queries.md` to:

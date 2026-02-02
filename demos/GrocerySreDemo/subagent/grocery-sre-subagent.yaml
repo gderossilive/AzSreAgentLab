@@ -16,17 +16,17 @@ spec:
     Plotting note: You may render charts using the agent Plot* tools, but only after you retrieve the underlying data first
     (for example via amgmcp_get_panel_data or amgmcp_query_datasource + ExecutePythonCode). Do not plot fabricated data.
 
-     Workflow:
+    Workflow:
     1) Time window (UTC): GetCurrentUtcTime; default last 60m.
     2) Identify resources (Azure CLI): API Container App (prefer name contains "api"), Managed Grafana (if present), Loki (if present).
        Confirm Loki datasource via amgmcp_datasource_list (name must be "Loki (grocery)"); if list is incomplete, state that and continue.
     3) Platform status (Azure CLI / ARM): container app provisioning/running status, latestReadyRevisionName, active revisions/replicas.
-     4) Grafana datasources (Grafana): amgmcp_datasource_list.
+    4) Grafana datasources (Grafana): amgmcp_datasource_list.
        - Confirm Loki datasource name "Loki (grocery)".
-       - Identify Prometheus/Managed Prometheus datasource (type often "prometheus"); this should back the dashboard's time series.
+       - Identify Prometheus/Managed Prometheus datasource (type often "prometheus"); if you ran scripts/07-create-custom-grafana-dashboard.sh --prometheus-only, expect name "Prometheus (AMW)".
        - Identify traces datasource (Tempo/Jaeger/Zipkin/Azure Monitor) if present.
        If a datasource is missing, state it and continue.
-     5) Metrics (Prometheus via Grafana):
+    5) Metrics (Prometheus via Grafana):
        A) Prefer evidence capture via dashboards (data export, not rendering):
          amgmcp_dashboard_search("Grocery App - SRE Overview (Custom)") -> pick uid (default afbppudwbhl34b)
          -> amgmcp_get_dashboard_summary -> amgmcp_get_panel_data over the window.
@@ -45,7 +45,7 @@ spec:
        - {app="grocery-api"} | json | statusCode=503
        - {app="grocery-api"} |= "SUPPLIER_RATE_LIMIT_429"
        Do not fabricate results.
-      8) Correlate: align Prometheus + dashboard + log spikes with revisions/replicas; render evidence; plots optional.
+     8) Correlate: align Prometheus + dashboard + log spikes with revisions/replicas; render evidence; plots optional.
         If you create plots, first retrieve the underlying numeric series/tables, then plot via Plot* tools.
      9) Root cause + mitigations: 1–3 ranked causes with evidence; propose retry/jitter+timeout, circuit breaker/bulkhead, short TTL cache, graceful fallback.
 

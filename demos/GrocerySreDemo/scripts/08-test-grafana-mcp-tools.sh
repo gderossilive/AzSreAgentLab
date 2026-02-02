@@ -22,6 +22,8 @@ Options:
                            Example: https://<fqdn>/mcp
   --subscription-id <id>   Subscription id for Resource Graph queries (default: env AZURE_SUBSCRIPTION_ID)
   --resource-id <id>       Resource id for resource-log queries (optional; if required, tool will be skipped)
+    --prometheus-datasource-name <n>
+                                                     Grafana Prometheus datasource name to query via MCP (default: Prometheus (AMW))
     --dashboard-uid <uid>     Grafana dashboard UID to use for dashboard summary + panel render
                                                         Default: afbppudwbhl34b
     --amw-name <name>        Azure Monitor Workspace name (Microsoft.Monitor/accounts) for Prometheus query test
@@ -46,6 +48,7 @@ resource_id=""
 dashboard_uid="afbppudwbhl34b"
 amw_name=""
 amw_query_endpoint=""
+prometheus_datasource_name="Prometheus (AMW)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,6 +58,8 @@ while [[ $# -gt 0 ]]; do
       subscription_id="${2:-}"; shift 2 ;;
     --resource-id)
       resource_id="${2:-}"; shift 2 ;;
+        --prometheus-datasource-name)
+            prometheus_datasource_name="${2:-}"; shift 2 ;;
         --dashboard-uid)
             dashboard_uid="${2:-}"; shift 2 ;;
         --amw-name)
@@ -106,7 +111,7 @@ if [[ -z "$mcp_url" ]]; then
   exit 2
 fi
 
-python3 - "$mcp_url" "$subscription_id" "$resource_id" "$dashboard_uid" "$amw_query_endpoint" <<'PY'
+python3 - "$mcp_url" "$subscription_id" "$resource_id" "$dashboard_uid" "$amw_query_endpoint" "$prometheus_datasource_name" <<'PY'
 import json
 import sys
 import time
@@ -121,6 +126,7 @@ subscription_id = (sys.argv[2] or '').strip()
 resource_id = (sys.argv[3] or '').strip()
 dashboard_uid = (sys.argv[4] or '').strip()
 amw_query_endpoint = (sys.argv[5] or '').strip() if len(sys.argv) > 5 else ''
+prometheus_datasource_name = (sys.argv[6] or '').strip() if len(sys.argv) > 6 else 'Prometheus (AMW)'
 
 
 def _now_ms() -> int:
@@ -242,6 +248,9 @@ print(f"[INFO] MCP URL: {mcp_url}")
 
 if amw_query_endpoint:
     print(f"[INFO] AMW Prometheus query endpoint: {amw_query_endpoint}")
+
+if prometheus_datasource_name:
+    print(f"[INFO] Grafana Prometheus datasource (expected): {prometheus_datasource_name}")
 
 # Probe routes
 for path in ('/', '/healthz'):
@@ -439,6 +448,55 @@ if 'amgmcp_datasource_list' in by_name:
     results_cache['amgmcp_datasource_list'] = resp
     if not ok2:
         failures += 1
+
+
+def _has_datasource_named(ds_resp: Any, name: str) -> bool:
+    if not name:
+        return False
+    if not isinstance(ds_resp, dict):
+        return False
+
+    # Proxy fast-path returns {ok: True, datasources: [...]}
+    dss = ds_resp.get('datasources')
+    if isinstance(dss, list):
+        for ds in dss:
+            if isinstance(ds, dict) and ds.get('name') == name:
+                return True
+
+    # Backend tool may return nested shapes under result.
+    result = ds_resp.get('result')
+    if isinstance(result, dict):
+        for key in ('datasources', 'items', 'result'):
+            items = result.get(key)
+            if isinstance(items, list):
+                for ds in items:
+                    if isinstance(ds, dict) and ds.get('name') == name:
+                        return True
+    return False
+
+
+# 1b) Prometheus datasource query via Grafana MCP (tests the Grafana datasource wiring)
+# Note: datasource discovery can legitimately fall back to a Loki-only list; don't gate on it.
+if 'amgmcp_query_datasource' in by_name:
+    if prometheus_datasource_name:
+        end_ms = _now_ms()
+        start_ms = end_ms - 15 * 60 * 1000
+        ok2, resp = run_tool(
+            'amgmcp_query_datasource',
+            {
+                'datasourceName': prometheus_datasource_name,
+                'expr': 'up{job="ca-api"}',
+                'fromMs': start_ms,
+                'toMs': end_ms,
+            },
+            req_id,
+        )
+        req_id += 1
+        results_cache['amgmcp_query_prometheus_datasource'] = resp
+        if not ok2:
+            failures += 1
+    else:
+        print('[SKIP] Prometheus datasource MCP query: missing datasource name')
 
 # 2) dashboard search
 if 'amgmcp_dashboard_search' in by_name:

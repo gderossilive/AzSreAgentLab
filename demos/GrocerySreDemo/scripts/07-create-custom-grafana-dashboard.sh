@@ -14,7 +14,16 @@ config_path="$demo_root/demo-config.json"
 usage() {
   cat <<'USAGE'
 Usage:
-  ./scripts/07-create-custom-grafana-dashboard.sh [--dashboard overview|scene4]
+  ./scripts/07-create-custom-grafana-dashboard.sh [--dashboard overview|scene4] [--with-prometheus]
+  ./scripts/07-create-custom-grafana-dashboard.sh --prometheus-only
+
+Optional Prometheus (AMW) datasource:
+  --with-prometheus            Create/update a Prometheus datasource that queries Azure Monitor Workspace (Managed Prometheus)
+  --prometheus-only            Only create/update the Prometheus datasource (skip Loki + dashboard)
+  --prometheus-datasource-name Datasource name (default: Prometheus (AMW))
+  --amw-name                    Azure Monitor Workspace name (Microsoft.Monitor/accounts). Default: auto-detect first in demo RG.
+  --amw-query-endpoint          Azure Monitor Workspace Prometheus query endpoint URL. Default: read from AMW properties.
+  --skip-amw-role-assignment    Do not grant Monitoring Data Reader to Grafana MI on the AMW resource.
 
 Defaults:
   --dashboard overview
@@ -26,10 +35,28 @@ USAGE
 }
 
 dashboard_kind="overview"
+with_prometheus="false"
+prometheus_only="false"
+prometheus_datasource_name="Prometheus (AMW)"
+amw_name=""
+amw_query_endpoint=""
+skip_amw_role_assignment="false"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dashboard)
       dashboard_kind="${2:-}"; shift 2 ;;
+    --with-prometheus)
+      with_prometheus="true"; shift 1 ;;
+    --prometheus-only)
+      with_prometheus="true"; prometheus_only="true"; shift 1 ;;
+    --prometheus-datasource-name)
+      prometheus_datasource_name="${2:-}"; shift 2 ;;
+    --amw-name)
+      amw_name="${2:-}"; shift 2 ;;
+    --amw-query-endpoint)
+      amw_query_endpoint="${2:-}"; shift 2 ;;
+    --skip-amw-role-assignment)
+      skip_amw_role_assignment="true"; shift 1 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -40,21 +67,25 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-case "$dashboard_kind" in
-  overview)
-    dashboard_template="$demo_root/grafana/grocery-sre-overview.dashboard.template.json"
-    dashboard_title="Grocery App - SRE Overview (Custom)"
-    ;;
-  scene4)
-    dashboard_template="$demo_root/grafana/grocery-sre-scene4-validate.dashboard.template.json"
-    dashboard_title="Grocery App - Scene 4 (Validate in Grafana)"
-    ;;
-  *)
-    echo "Invalid --dashboard value: $dashboard_kind" >&2
-    usage
-    exit 2
-    ;;
-esac
+dashboard_template=""
+dashboard_title=""
+if [[ "$prometheus_only" != "true" ]]; then
+  case "$dashboard_kind" in
+    overview)
+      dashboard_template="$demo_root/grafana/grocery-sre-overview.dashboard.template.json"
+      dashboard_title="Grocery App - SRE Overview (Custom)"
+      ;;
+    scene4)
+      dashboard_template="$demo_root/grafana/grocery-sre-scene4-validate.dashboard.template.json"
+      dashboard_title="Grocery App - Scene 4 (Validate in Grafana)"
+      ;;
+    *)
+      echo "Invalid --dashboard value: $dashboard_kind" >&2
+      usage
+      exit 2
+      ;;
+  esac
+fi
 
 tmp_dir="${TMPDIR:-/tmp}/grocery-grafana"
 mkdir -p "$tmp_dir"
@@ -73,7 +104,9 @@ command -v az >/dev/null 2>&1 || die "Azure CLI (az) not found"
 command -v python3 >/dev/null 2>&1 || die "python3 not found (used for JSON parsing)"
 
 [[ -f "$config_path" ]] || die "Missing $config_path. Run demos/GrocerySreDemo/scripts/01-setup-demo.sh first."
-[[ -f "$dashboard_template" ]] || die "Missing dashboard template: $dashboard_template"
+if [[ "$prometheus_only" != "true" ]]; then
+  [[ -f "$dashboard_template" ]] || die "Missing dashboard template: $dashboard_template"
+fi
 
 subscription_id="$(python3 -c "import json; print(json.load(open('$config_path'))['SubscriptionId'])")"
 rg_name="$(python3 -c "import json; print(json.load(open('$config_path'))['ResourceGroupName'])")"
@@ -85,6 +118,85 @@ az account set --subscription "$subscription_id" >/dev/null
 
 log_step "Ensuring Azure Managed Grafana CLI extension is available"
 az extension add --name amg --upgrade --only-show-errors >/dev/null || true
+
+if [[ "$with_prometheus" == "true" ]]; then
+  if [[ -z "$amw_name" ]]; then
+    log_step "Auto-detecting Azure Monitor Workspace (AMW) in $rg_name"
+    amw_name="$(az resource list -g "$rg_name" --resource-type Microsoft.Monitor/accounts --query "[0].name" -o tsv)"
+    [[ -n "$amw_name" ]] || die "Unable to find an Azure Monitor Workspace (Microsoft.Monitor/accounts) in $rg_name. Pass --amw-name."
+  fi
+
+  amw_id="$(az resource show -g "$rg_name" -n "$amw_name" --resource-type Microsoft.Monitor/accounts --query id -o tsv)"
+  [[ -n "$amw_id" ]] || die "Unable to resolve AMW resource id for $amw_name"
+
+  if [[ -z "$amw_query_endpoint" ]]; then
+    log_step "Resolving AMW Prometheus query endpoint from AMW properties"
+    amw_query_endpoint="$(az resource show -g "$rg_name" -n "$amw_name" --resource-type Microsoft.Monitor/accounts --query properties.metrics.prometheusQueryEndpoint -o tsv)"
+    [[ -n "$amw_query_endpoint" ]] || die "Unable to read properties.metrics.prometheusQueryEndpoint from AMW $amw_name"
+  fi
+  amw_query_endpoint="${amw_query_endpoint%/}"
+  log_ok "AMW query endpoint: $amw_query_endpoint"
+
+  if [[ "$skip_amw_role_assignment" != "true" ]]; then
+    log_step "Ensuring Grafana managed identity can query AMW (Monitoring Data Reader on AMW scope)"
+
+    grafana_principal_id="$(az grafana show -g "$rg_name" -n "$grafana_name" --query identity.principalId -o tsv 2>/dev/null || true)"
+    [[ -n "$grafana_principal_id" ]] || die "Unable to resolve Grafana managed identity principalId for $grafana_name"
+
+    existing_ra="$(az role assignment list --assignee-object-id "$grafana_principal_id" --scope "$amw_id" --query "[?roleDefinitionName=='Monitoring Data Reader'] | length(@)" -o tsv 2>/dev/null || echo 0)"
+    if [[ "$existing_ra" == "0" ]]; then
+      az role assignment create \
+        --assignee-object-id "$grafana_principal_id" \
+        --assignee-principal-type ServicePrincipal \
+        --role "Monitoring Data Reader" \
+        --scope "$amw_id" \
+        --only-show-errors >/dev/null
+      log_ok "Granted Monitoring Data Reader on AMW to Grafana MI"
+    else
+      log_ok "Role assignment already present"
+    fi
+  else
+    log_info "Skipping role assignment (--skip-amw-role-assignment)"
+  fi
+
+  log_step "Creating/updating Prometheus datasource in Managed Grafana"
+  prom_ds_def="$tmp_dir/prometheus-amw.datasource.json"
+  cat >"$prom_ds_def" <<JSON
+{
+  "name": "${prometheus_datasource_name}",
+  "type": "prometheus",
+  "access": "proxy",
+  "url": "${amw_query_endpoint}",
+  "isDefault": false,
+  "jsonData": {
+    "httpMethod": "POST",
+    "azureAuth": true,
+    "azureAuthType": "msi"
+  }
+}
+JSON
+
+  prom_uid="$(az grafana data-source list -g "$rg_name" -n "$grafana_name" --query "[?name=='${prometheus_datasource_name}'].uid | [0]" -o tsv)"
+  if [[ -z "$prom_uid" ]]; then
+    az grafana data-source create -g "$rg_name" -n "$grafana_name" --definition "@$prom_ds_def" --only-show-errors >/dev/null
+    prom_uid="$(az grafana data-source list -g "$rg_name" -n "$grafana_name" --query "[?name=='${prometheus_datasource_name}'].uid | [0]" -o tsv)"
+    [[ -n "$prom_uid" ]] || die "Failed to resolve Prometheus datasource uid after create"
+    log_ok "Prometheus datasource uid: $prom_uid"
+  else
+    az grafana data-source update -g "$rg_name" -n "$grafana_name" --data-source "$prom_uid" --definition "@$prom_ds_def" --only-show-errors >/dev/null
+    log_ok "Prometheus datasource uid: $prom_uid"
+  fi
+fi
+
+if [[ "$prometheus_only" == "true" ]]; then
+  log_ok "Prometheus datasource created/updated"
+  endpoint="$(az grafana show -g "$rg_name" -n "$grafana_name" --query properties.endpoint -o tsv 2>/dev/null || true)"
+  if [[ -n "$endpoint" ]]; then
+    log_info "Grafana endpoint: $endpoint"
+    log_info "Open Grafana → Connections → Data sources → '${prometheus_datasource_name}'"
+  fi
+  exit 0
+fi
 
 log_step "Resolving Loki endpoint (Container App ca-loki)"
 if ! az containerapp show -g "$rg_name" -n "ca-loki" >/dev/null 2>&1; then

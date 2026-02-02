@@ -193,6 +193,106 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _amw_query_endpoint() -> str:
+    # Azure Monitor Workspace Prometheus query endpoint (workspace-scoped)
+    return _env_str("AMW_QUERY_ENDPOINT").rstrip("/")
+
+
+def _prometheus_datasource_uid() -> str:
+    return _env_str("PROMETHEUS_DATASOURCE_UID").strip()
+
+
+def _looks_like_prometheus_datasource(name: Optional[str]) -> bool:
+    if not name:
+        return False
+    lowered = name.strip().lower()
+    return "prometheus" in lowered or lowered.startswith("prom (") or lowered.startswith("prometheus (")
+
+
+def _managed_identity_access_token(resource: str) -> str:
+    # Container Apps managed identity endpoint.
+    endpoint = _env_str("IDENTITY_ENDPOINT")
+    header = _env_str("IDENTITY_HEADER")
+    client_id = _env_str("AZURE_CLIENT_ID")
+    if not endpoint or not header:
+        raise RuntimeError("Managed identity environment not detected (missing IDENTITY_ENDPOINT/IDENTITY_HEADER)")
+
+    qs = {
+        "api-version": "2019-08-01",
+        "resource": resource,
+    }
+    if client_id:
+        qs["client_id"] = client_id
+
+    url = endpoint + ("&" if "?" in endpoint else "?") + urllib.parse.urlencode(qs)
+    req = urllib.request.Request(url, headers={"x-identity-header": header})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        payload = json.loads((resp.read() or b"{}").decode("utf-8"))
+    token = payload.get("access_token")
+    if not token:
+        raise RuntimeError("Managed identity token response missing access_token")
+    return str(token)
+
+
+def _amw_promql_query_range(*, endpoint: str, expr: str, start_ms: int, end_ms: int, step_s: int = 60) -> dict[str, Any]:
+    token = _managed_identity_access_token("https://prometheus.monitor.azure.com")
+    base = endpoint.rstrip("/")
+    start_s = max(0, int(start_ms // 1000))
+    end_s = max(0, int(end_ms // 1000))
+    step_s = max(1, int(step_s))
+
+    qs = urllib.parse.urlencode({
+        "query": expr,
+        "start": str(start_s),
+        "end": str(end_s),
+        "step": str(step_s),
+    })
+    url = f"{base}/api/v1/query_range?{qs}"
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "accept": "application/json",
+            "authorization": f"Bearer {token}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=float(_env_int("AMW_PROMQL_TIMEOUT_S", 15))) as resp:
+        return json.loads((resp.read() or b"{}").decode("utf-8"))
+
+
+def _grafana_promql_query_range_via_datasource_proxy(
+    *,
+    datasource_uid: str,
+    expr: str,
+    start_ms: int,
+    end_ms: int,
+    step_s: int = 60,
+) -> dict[str, Any]:
+    """Query Prometheus through Grafana's datasource proxy (server-side auth).
+
+    This avoids needing AMW data-plane permissions on the proxy identity.
+    """
+
+    datasource_uid = (datasource_uid or "").strip()
+    if not datasource_uid:
+        raise ValueError("datasource_uid is required")
+
+    start_s = max(0, int(start_ms // 1000))
+    end_s = max(0, int(end_ms // 1000))
+    step_s = max(1, int(step_s))
+
+    qs = urllib.parse.urlencode(
+        {
+            "query": expr,
+            "start": str(start_s),
+            "end": str(end_s),
+            "step": str(step_s),
+        }
+    )
+    path = f"/api/datasources/proxy/uid/{urllib.parse.quote(datasource_uid)}/api/v1/query_range?{qs}"
+    return _grafana_get_json(path, timeout_s=float(_env_int("PROM_GRAFANA_PROXY_TIMEOUT_S", 10)))
+
+
 def _schema_properties(tools_list_resp: dict[str, Any], tool_name: str) -> set[str]:
     result = tools_list_resp.get("result") or {}
     tools = result.get("tools")
@@ -535,7 +635,7 @@ def _get_managed_identity_access_token(resource: str) -> str:
     return token
 
 
-def _grafana_get_json(path: str) -> Any:
+def _grafana_get_json(path: str, *, timeout_s: Optional[float] = None) -> Any:
     endpoint = _env_str("GRAFANA_ENDPOINT").rstrip("/")
     if not endpoint:
         raise RuntimeError("GRAFANA_ENDPOINT is required")
@@ -546,7 +646,7 @@ def _grafana_get_json(path: str) -> Any:
         method="GET",
         headers=_grafana_auth_headers(accept="application/json"),
     )
-    with urllib.request.urlopen(req, timeout=_grafana_http_timeout_s()) as resp:
+    with urllib.request.urlopen(req, timeout=_grafana_http_timeout_s() if timeout_s is None else float(timeout_s)) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -864,6 +964,46 @@ def _backend_tool_call_safe(name: str, arguments: dict[str, Any]) -> dict[str, A
             "errorType": "TimeoutError",
             "error": str(exc),
             "hint": "The underlying amg-mcp stdio call exceeded the proxy timeout. This can happen during backend startup (initialize/tools/list) as well as tool calls. Try again, or increase AMG_MCP_INIT_TIMEOUT_S / AMG_MCP_TOOLS_LIST_TIMEOUT_S / AMG_MCP_TOOL_TIMEOUT_S (keep tool timeout <100s to avoid client cancellation).",
+        }
+    except RuntimeError as exc:
+        _reset_backend(f"runtime error calling {name}: {exc}")
+        return {
+            "ok": False,
+            "errorType": "RuntimeError",
+            "error": str(exc),
+            "hint": "The underlying amg-mcp process appears unhealthy. The proxy reset it; retry the tool call.",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "errorType": type(exc).__name__,
+            "error": str(exc),
+        }
+
+
+def _backend_tool_call_safe_with_timeout(name: str, arguments: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+    """Like _backend_tool_call_safe, but allows overriding the tool call timeout.
+
+    This is useful for workflows where we want a fast attempt against the stdio backend
+    (to avoid long client-side timeouts), then fall back to direct data-plane calls.
+    """
+
+    try:
+        backend = _get_backend()
+        supported_keys = getattr(backend, "_tool_supported_keys", {}).get(name)
+        if supported_keys:
+            arguments = {k: v for k, v in arguments.items() if k in supported_keys}
+
+        # Call MCP tools/call directly so we can override timeout.
+        resp = backend._call("tools/call", {"name": name, "arguments": arguments}, timeout_s=float(timeout_s))
+        return resp.raw
+    except TimeoutError as exc:
+        _reset_backend(f"timeout calling {name}: {exc}")
+        return {
+            "ok": False,
+            "errorType": "TimeoutError",
+            "error": str(exc),
+            "hint": "The underlying amg-mcp stdio call exceeded the proxy timeout. The proxy reset it; retry the tool call.",
         }
     except RuntimeError as exc:
         _reset_backend(f"runtime error calling {name}: {exc}")
@@ -1277,17 +1417,29 @@ async def amgmcp_datasource_list() -> dict[str, Any]:
     # Fallback: if the amg-mcp backend stalls and we have a Loki endpoint configured,
     # return a minimal datasource list so callers can proceed.
     if isinstance(out, dict) and out.get("ok") is False and out.get("errorType") == "TimeoutError":
+        datasources: list[dict[str, Any]] = []
         if _loki_endpoint():
+            datasources.append(
+                {
+                    "name": "Loki (grocery)",
+                    "type": "loki",
+                    "url": _loki_endpoint(),
+                }
+            )
+        if _amw_query_endpoint():
+            datasources.append(
+                {
+                    "name": "Prometheus (AMW)",
+                    "type": "prometheus",
+                    "url": _amw_query_endpoint(),
+                }
+            )
+
+        if datasources:
             out = {
                 "ok": True,
-                "source": "loki-direct",
-                "datasources": [
-                    {
-                        "name": "Loki (grocery)",
-                        "type": "loki",
-                        "url": _loki_endpoint(),
-                    }
-                ],
+                "source": "direct-fallback",
+                "datasources": datasources,
             }
     # Cache successful responses even if they came from the slower path.
     if isinstance(out, dict) and "error" not in out:
@@ -1336,6 +1488,13 @@ async def amgmcp_query_datasource(
     if expr is not None:
         args["expr"] = expr
 
+    # Compatibility: some backends expect PromQL/Loki queries under a specific key.
+    # If the caller provided only one of (query, expr), set both.
+    effective_q = query if query is not None else expr
+    if effective_q is not None and str(effective_q).strip() != "":
+        args.setdefault("query", effective_q)
+        args.setdefault("expr", effective_q)
+
     if limit is not None:
         args["limit"] = limit
 
@@ -1355,6 +1514,92 @@ async def amgmcp_query_datasource(
         args["startTime"] = start_time
     if end_time is not None:
         args["endTime"] = end_time
+
+    # Prometheus: avoid the amg-mcp backend by default (it can stall long enough to hit
+    # common MCP client read timeouts). Prefer Grafana's datasource proxy (server-side auth),
+    # then fall back to AMW direct PromQL if configured. Opt-in to backend via env.
+    if _looks_like_prometheus_datasource(ds_name):
+        effective_expr = expr if expr is not None else query
+        start_ms = from_ms if from_ms is not None else start_time
+        end_ms = to_ms if to_ms is not None else end_time
+
+        if not effective_expr:
+            return {"ok": False, "source": "prometheus", "errorType": "ValueError", "error": "expr (PromQL) is required"}
+        if start_ms is None or end_ms is None:
+            return {
+                "ok": False,
+                "source": "prometheus",
+                "errorType": "ValueError",
+                "error": "fromMs/toMs (or startTime/endTime) are required",
+            }
+
+        proxy_err: Optional[dict[str, str]] = None
+        amw_err: Optional[dict[str, str]] = None
+        backend_resp: Optional[dict[str, Any]] = None
+
+        # 1) Grafana datasource proxy (fast path)
+        the_uid = datasourceUid or datasourceUID or datasource_uid or _prometheus_datasource_uid()
+        if the_uid:
+            try:
+                payload = await asyncio.to_thread(
+                    _grafana_promql_query_range_via_datasource_proxy,
+                    datasource_uid=str(the_uid),
+                    expr=str(effective_expr),
+                    start_ms=int(start_ms),
+                    end_ms=int(end_ms),
+                    step_s=60,
+                )
+                return {
+                    "ok": True,
+                    "source": "grafana-datasource-proxy",
+                    "datasourceUid": str(the_uid),
+                    "result": payload,
+                }
+            except Exception as exc:
+                proxy_err = {"errorType": type(exc).__name__, "error": str(exc)}
+
+        # 2) AMW direct PromQL (bounded timeout)
+        if _amw_query_endpoint():
+            try:
+                payload = await asyncio.to_thread(
+                    _amw_promql_query_range,
+                    endpoint=_amw_query_endpoint(),
+                    expr=str(effective_expr),
+                    start_ms=int(start_ms),
+                    end_ms=int(end_ms),
+                    step_s=60,
+                )
+                return {
+                    "ok": True,
+                    "source": "amw-direct",
+                    "result": payload,
+                    "grafanaProxy": proxy_err,
+                }
+            except Exception as exc:
+                amw_err = {"errorType": type(exc).__name__, "error": str(exc)}
+
+        # 3) Optional backend (explicit opt-in)
+        if _env_bool("ENABLE_BACKEND_PROMETHEUS", default=False):
+            backend_timeout_s = float(_env_int("AMG_MCP_PROM_QUERY_TIMEOUT_S", 10))
+            backend_resp = await asyncio.to_thread(
+                _backend_tool_call_safe_with_timeout,
+                "amgmcp_query_datasource",
+                args,
+                backend_timeout_s,
+            )
+            if isinstance(backend_resp, dict) and "error" not in backend_resp:
+                return backend_resp
+
+        return {
+            "ok": False,
+            "source": "prometheus",
+            "errorType": "RuntimeError",
+            "error": "All Prometheus query strategies failed",
+            "grafanaProxy": proxy_err,
+            "amw": amw_err,
+            "backend": backend_resp,
+            "hint": "If AMW direct returns HTTP 403, ensure the proxy's managed identity has 'Monitoring Data Reader' on the Azure Monitor workspace and allow time for RBAC propagation.",
+        }
 
     # Prefer Loki-direct if the datasource looks like Loki and a direct endpoint is configured.
     if _looks_like_loki_datasource(ds_name) and _loki_endpoint():
