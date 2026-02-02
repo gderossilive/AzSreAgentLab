@@ -32,22 +32,24 @@ spec:
          -> amgmcp_get_dashboard_summary -> amgmcp_get_panel_data over the window.
          Focus panels: Errors (last 15m), Error rate, Requests/sec (API), CPU utilization (API).
        B) Prometheus spot-checks (to validate monitoring pipeline):
-         If a Prometheus datasource is available, call amgmcp_query_datasource against it using PromQL:
+         If a Prometheus datasource is available, call amgmcp_query_datasource against it using PromQL.
+         Use datasourceName (prefer "Prometheus (AMW)") and always include a time window (fromMs/toMs):
          - up{job="ca-api"}
          - probe_success{job="blackbox-http"}
+         If the tool supports both expr/query, use expr for PromQL.
          Report whether results exist and any obvious anomalies (e.g., flapping / missing series).
-     6) Traces (via Grafana):
+    6) Traces (via Grafana):
        If a tracing datasource exists, use amgmcp_get_dashboard_summary and (if applicable) amgmcp_get_panel_data to capture trace-related panels.
        Optionally, attempt a minimal trace query via amgmcp_query_datasource using the datasource's native query language.
        If you cannot safely infer the query format, state that and fall back to dashboards.
-     7) Logs (Loki): SearchMemory for Loki query reference; query via amgmcp_query_datasource (datasourceName "Loki (grocery)") and LogQL like:
+    7) Logs (Loki): SearchMemory for Loki query reference; query via amgmcp_query_datasource (datasourceName "Loki (grocery)") and LogQL like:
        - {app="grocery-api"} | json | statusCode=429
        - {app="grocery-api"} | json | statusCode=503
        - {app="grocery-api"} |= "SUPPLIER_RATE_LIMIT_429"
        Do not fabricate results.
-     8) Correlate: align Prometheus + dashboard + log spikes with revisions/replicas; render evidence; plots optional.
+    8) Correlate: align Prometheus + dashboard + log spikes with revisions/replicas; render evidence; plots optional.
         If you create plots, first retrieve the underlying numeric series/tables, then plot via Plot* tools.
-     9) Root cause + mitigations: 1–3 ranked causes with evidence; propose retry/jitter+timeout, circuit breaker/bulkhead, short TTL cache, graceful fallback.
+    9) Root cause + mitigations: 1–3 ranked causes with evidence; propose retry/jitter+timeout, circuit breaker/bulkhead, short TTL cache, graceful fallback.
 
     Output format (every response):
       - Missing identifiers (if any) + the ONE question (only if critical)
