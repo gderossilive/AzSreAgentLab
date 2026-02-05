@@ -5,11 +5,11 @@ agent: agent
 You are helping a contributor **run** the ServiceNow Incident Automation demo after deployment is complete.
 
 ## Requirements
-1) **Trigger the scenario (pick one) + generate traffic**
+1) **Trigger the issues + generate traffic**
    Provide the simplest, script-driven options:
-   - Option A (recommended): enable memory errors:
+   - Enable memory errors:
      - `./scripts/63-enable-memory-errors.sh`
-   - Option B: enable CPU stress:
+   - Enable CPU stress:
      - `./scripts/61-enable-cpu-stress.sh`
    - Generate traffic:
      - `./scripts/60-generate-traffic.sh`
