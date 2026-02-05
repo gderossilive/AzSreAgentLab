@@ -197,7 +197,7 @@ if prod_ms="$(measure_ms "$prod_url$probe_path")"; then
   if [[ "$prod_ms" -lt "$healthy_ms_threshold" ]]; then log_ok "Production: ${prod_ms}ms - HEALTHY";
   else log_warn "Production: ${prod_ms}ms - SLOW (unexpected)"; fi
 else
-  log_warn "Production request failed: $(measure_http "$prod_url$probe_path" 60 | head -c 240)"
+  log_warn "Production request failed: $(measure_http "$prod_url$probe_path" 60 | head -c 240 || true)"
 fi
 
 log_info "Testing staging (should be SLOW)..."
@@ -205,7 +205,7 @@ if staging_ms="$(measure_ms "$staging_url$probe_path")"; then
   if [[ "$staging_ms" -gt 1000 ]]; then log_ok "Staging: ${staging_ms}ms - SLOW (as expected)";
   else log_warn "Staging: ${staging_ms}ms - FAST (unexpected)"; fi
 else
-  log_warn "Staging request failed: $(measure_http "$staging_url$probe_path" 60 | head -c 240)"
+  log_warn "Staging request failed: $(measure_http "$staging_url$probe_path" 60 | head -c 240 || true)"
 fi
 
 if [[ "$dry_run" == "true" ]]; then
@@ -244,7 +244,7 @@ if prod_ms2="$(measure_ms "$prod_url$probe_path")"; then
   if [[ "$prod_ms2" -gt "$degraded_ms_threshold" ]]; then log_warn "Production: ${prod_ms2}ms - DEGRADED";
   else log_warn "Production: ${prod_ms2}ms (may take a moment to show degradation)"; fi
 else
-  log_warn "Production request failed: $(measure_http "$prod_url$probe_path" 60 | head -c 240)"
+  log_warn "Production request failed: $(measure_http "$prod_url$probe_path" 60 | head -c 240 || true)"
 fi
 
 log_step "Generating load ($request_count requests)"
@@ -280,7 +280,7 @@ for ((i=1; i<=request_count; i++)); do
       printf '  [%d/%d] %dms\n' "$i" "$request_count" "$ms"
     fi
   else
-    diag="$(measure_http "$url" 60 | head -c 260)"
+    diag="$(measure_http "$url" 60 | head -c 260 || true)"
     printf '  [%d/%d] FAILED %s\n' "$i" "$request_count" "$diag"
   fi
 
@@ -320,7 +320,7 @@ if [[ "$wait_for_recovery" == "true" ]]; then
       fi
       log_info "Not yet recovered: ${ms}ms (attempt ${attempts}/${max_attempts})"
     else
-      log_warn "Request failed (attempt ${attempts}/${max_attempts}): $(measure_http "$prod_url$probe_path" 60 | head -c 240)"
+      log_warn "Request failed (attempt ${attempts}/${max_attempts}): $(measure_http "$prod_url$probe_path" 60 | head -c 240 || true)"
     fi
 
     sleep 30
