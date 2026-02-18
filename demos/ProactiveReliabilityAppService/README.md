@@ -21,6 +21,44 @@ Goal: intentionally deploy “bad” code via **slot swap**, have **Azure SRE Ag
 
 The alert is used to trigger an **Incident trigger** in the SRE Agent portal.
 
+## Workflows
+
+This demo supports two complementary reliability workflows:
+
+### 1. Reactive Recovery (Post-Deployment)
+**Goal**: Automatically detect and remediate performance regressions that reach production.
+
+**Flow**:
+1. Slot swap occurs (staging → production)
+2. Activity Log Alert fires
+3. SRE Agent's `DeploymentHealthCheck` subagent:
+   - Queries Application Insights for current production response time
+   - Compares against stored baseline
+   - If regression ≥20%, executes automatic rollback (swap back)
+   - Creates GitHub issue with root cause analysis
+   - Posts summary to Teams
+
+**Use Case**: Safety net for unexpected production degradation.
+
+### 2. Proactive Prevention (Pre-Deployment) — NEW
+**Goal**: Validate staging slot performance **before** promoting to production to prevent regressions.
+
+**Flow**:
+1. Developer/operator requests pre-swap validation (manual or automated)
+2. SRE Agent's `PreSwapHealthGate` subagent:
+   - Queries Application Insights for staging slot response time (last 5 minutes)
+   - Compares against stored baseline
+   - If deviation ≥20%, **REJECTS** the swap and files GitHub issue
+   - If deviation <20%, **APPROVES** the swap
+   - Posts decision to Teams
+
+**Use Case**: Gate deployments to prevent known performance issues from reaching production.
+
+**Recommended Setup**:
+- Manual trigger: Run on-demand before planned production deployments
+- Automated trigger: Integrate with CI/CD pipeline as a deployment gate
+- Generate load to staging slot (5+ requests) before validation to ensure sufficient data
+
 ## Prerequisites
 
 - Azure CLI authenticated: `az login`
@@ -80,9 +118,10 @@ You can start with just **no-op** on Teams/GitHub/Email by removing those tools 
 
 Use the YAML templates in `SubAgents/` as a starting point:
 
-- `SubAgents/AvgResponseBaseline.yaml`
-- `SubAgents/DeploymentHealthCheck.yaml`
-- `SubAgents/DeploymentReporter.yaml`
+- `SubAgents/AvgResponseBaseline.yaml` — Computes and stores baseline response time
+- `SubAgents/DeploymentHealthCheck.yaml` — Reactive health check after swap (detects regression and swaps back)
+- `SubAgents/PreSwapHealthGate.yaml` — **NEW**: Proactive validation before swap (prevents deploying regressions)
+- `SubAgents/DeploymentReporter.yaml` — Daily deployment summary reporter
 
 You must replace placeholders:
 - `<YOUR_SUBSCRIPTION_ID>`
@@ -103,6 +142,7 @@ az monitor app-insights component show -g rg-sre-proactive-demo -a <appInsightsN
 Recommended triggers:
 
 - Scheduled trigger `BaselineTask` (every 15m) → subagent `AvgResponseTime`
+- **Manual/On-Demand trigger `PreSwapValidation`** → subagent `PreSwapHealthGate` — Run before manual swaps to validate staging performance
 - Incident trigger `Swap Alert` (title contains `slot swap`) → subagent `DeploymentHealthCheck`
 - Scheduled trigger `ReporterTask` (daily) → subagent `DeploymentReporter`
 
@@ -260,6 +300,69 @@ Useful options:
 ./scripts/02-run-demo.sh --probe-path /api/products --dry-run
 ```
 
+### Using Pre-Swap Health Gate (Proactive Validation)
+
+To validate staging slot performance **before** swapping to production:
+
+#### Option 1: Manual Validation via SRE Agent Portal
+
+1. In the SRE Agent portal, navigate to the `PreSwapValidation` trigger
+2. Generate load to staging slot to ensure sufficient telemetry:
+   ```bash
+   # Get staging URL from demo config
+   STAGING=$(python3 -c "import json;print(json.load(open('demo-config.json'))['StagingUrl'].rstrip('/'))")
+   
+   # Generate 10 requests to staging
+   for i in {1..10}; do
+     curl -sS -o /dev/null -w "staging: %{http_code} %{time_total}s\n" "$STAGING/api/products"
+     sleep 1
+   done
+   ```
+3. Manually trigger the `PreSwapValidation` trigger in the SRE Agent portal
+4. Review the validation result in Teams/email:
+   - **APPROVE SWAP**: Staging performance is within acceptable range (<20% deviation)
+   - **REJECT SWAP**: Staging has performance regression (≥20% deviation) — do not deploy
+
+#### Option 2: Scripted Validation
+
+Create a helper script to automate pre-swap validation:
+
+```bash
+#!/usr/bin/env bash
+# validate-before-swap.sh
+
+set -euo pipefail
+
+config_path="./demo-config.json"
+staging_url="$(python3 -c "import json;print(json.load(open('$config_path'))['StagingUrl'].rstrip('/'))")"
+
+echo "Generating load to staging slot for validation..."
+for i in {1..10}; do
+  curl -sS -o /dev/null -w "Request $i: %{time_total}s\n" "$staging_url/api/products"
+  sleep 1
+done
+
+echo ""
+echo "Load generation complete."
+echo "Now trigger the PreSwapValidation in SRE Agent portal and wait for approval/rejection."
+echo ""
+echo "If APPROVED: Proceed with slot swap"
+echo "If REJECTED: Investigate performance regression in staging before deploying"
+```
+
+#### Integration with CI/CD Pipelines
+
+For automated gating, integrate the pre-swap validation into your deployment pipeline:
+
+1. **Generate staging load**: Ensure Application Insights has recent staging telemetry
+2. **Trigger validation**: Use SRE Agent API or manual trigger to run `PreSwapHealthGate`
+3. **Wait for result**: Poll for validation completion
+4. **Gate decision**:
+   - If APPROVED → Proceed with `az webapp deployment slot swap`
+   - If REJECTED → Cancel deployment, file issue, investigate
+
+This prevents deploying known performance regressions to production.
+
 ### Optional: run via VS Code tasks
 
 If you're using the dev container in VS Code, there are helper tasks under `.vscode/tasks.json`:
@@ -334,6 +437,33 @@ If you need to get back to a clean baseline state:
 ```bash
 ./scripts/03-reset-demo.sh
 ```
+
+## Addressing Production Incidents
+
+If you encounter a production incident (like the one documented in issue "App Service sreproactive-vscode-39596: Response time regression..."):
+
+### Immediate Response (Reactive)
+1. The `DeploymentHealthCheck` subagent should detect the regression and automatically swap back
+2. Verify recovery in Application Insights
+3. Review the GitHub issue created by the agent for root cause analysis
+
+### Prevention for Future Deployments (Proactive)
+1. **Use Pre-Swap Validation**: Before any future slot swaps, run the `PreSwapHealthGate` subagent
+2. **Generate Staging Load**: Ensure staging has 5+ requests in the last 5 minutes before validation
+3. **Review Validation Result**:
+   - If REJECTED: Investigate and fix the performance issue before deploying
+   - If APPROVED: Proceed with the swap
+4. **Continuous Monitoring**: Keep the baseline updated (every 15 minutes) to detect drift
+
+### Root Cause Investigation Checklist
+When a regression is detected, investigate:
+- [ ] Recent code changes in the degraded slot (git diff, PR review)
+- [ ] Configuration changes (app settings, connection strings, scaling settings)
+- [ ] External dependencies (database queries, API calls, third-party services)
+- [ ] Resource utilization (CPU, memory, network)
+- [ ] Application Insights dependency tracking for slow operations
+
+The SRE Agent's `PreSwapHealthGate` and `DeploymentHealthCheck` subagents will help automate detection, but manual investigation may be needed for complex issues.
 
 ## Cleanup
 
