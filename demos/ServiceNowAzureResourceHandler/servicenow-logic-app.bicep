@@ -89,10 +89,14 @@ resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
           inputs: {
             method: 'POST'
             uri: 'https://${serviceNowInstance}.service-now.com/api/now/table/incident'
+            authentication: {
+              type: 'Basic'
+              username: '${serviceNowUsername}'
+              password: '${serviceNowPassword}'
+            }
             headers: {
               'Content-Type': 'application/json'
               'Accept': 'application/json'
-              'Authorization': 'Basic @{base64(concat(\'${serviceNowUsername}\', \':\', \'${serviceNowPassword}\'))}'
             }
             body: {
               short_description: '@{body(\'Parse_Alert_Data\')?[\'data\']?[\'essentials\']?[\'alertRule\']}'

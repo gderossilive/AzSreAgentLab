@@ -32,17 +32,17 @@ Your goal is to provide **safe, repeatable, copy/paste commands** to:
      az containerapp show -g "$OCTOPETS_RG_NAME" -n octopetsapi --query '{name:name,status:properties.runningStatus}' -o table
      ```
 
-2) **Trigger ONE real anomaly (recommended options)**
+2) **Trigger real anomaly**
 
-   **Option A — CPU/latency anomaly affecting BOTH apps (recommended)**
-   This uses the built-in backend CPU injector plus higher request volume. The frontend is included because the traffic generator also hits the frontend endpoints.
+   This uses the built-in backend CPU injector and memory errors together, plus higher request volume. The frontend is included because the traffic generator also hits the frontend endpoints.
 
    ```bash
-   # 1) Enable backend CPU stress
+   # 1) Enable backend CPU stress and memory errors
    ./scripts/61-enable-cpu-stress.sh
+   ./scripts/63-enable-memory-errors.sh
 
    # 2) Generate traffic for 15 minutes
-   # Start with ONE instance; if it’s not enough, run 2–3 in parallel.
+   # Start with ONE instance; if it's not enough, run 2–3 in parallel.
    ./scripts/60-generate-traffic.sh 15
    ```
 
@@ -55,12 +55,6 @@ Your goal is to provide **safe, repeatable, copy/paste commands** to:
    wait
    ```
 
-   **Option B — Memory pressure anomaly (backend) + user traffic**
-
-   ```bash
-   ./scripts/63-enable-memory-errors.sh
-   ./scripts/60-generate-traffic.sh 10
-   ```
 
 3) **Verify the anomaly (quick checks)**
    - Validate the injectors are set on the backend:

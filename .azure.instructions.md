@@ -1,0 +1,5 @@
+---
+description: **CRITICAL**: Read this file FIRST before answering ANY Azure-related questions or performing ANY Azure operations. This file must be loaded as context whenever Azure is explicitly mentioned. It provides accurate and up-to-date information about Azure. **MUST** be read when user mentions: Azure, Azure Functions, AWS Lambda to Azure Functions migration, Azure Static Web App, or any specific Azure service name. Load this instruction file ONLY for Azure-related requests, NOT for generic cloud or deployment questions.
+---
+
+- Summarize topic before taking action: When the user asks about Azure Functions or Azure Static Web Apps, invoke the azure_development-recommend_custom_modes tool once first to see if any existing custom mode could be a good fit to what user is asking.
