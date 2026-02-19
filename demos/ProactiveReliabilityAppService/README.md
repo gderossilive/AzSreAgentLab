@@ -82,6 +82,7 @@ Use the YAML templates in `SubAgents/` as a starting point:
 
 - `SubAgents/AvgResponseBaseline.yaml`
 - `SubAgents/DeploymentHealthCheck.yaml`
+- `SubAgents/PreSwapHealthGate.yaml`
 - `SubAgents/DeploymentReporter.yaml`
 
 You must replace placeholders:
@@ -105,6 +106,13 @@ Recommended triggers:
 - Scheduled trigger `BaselineTask` (every 15m) → subagent `AvgResponseTime`
 - Incident trigger `Swap Alert` (title contains `slot swap`) → subagent `DeploymentHealthCheck`
 - Scheduled trigger `ReporterTask` (daily) → subagent `DeploymentReporter`
+- On-demand / pipeline trigger `PreSwapGate` → subagent `PreSwapHealthGate`
+
+> **PreSwapHealthGate** is the proactive canary gate: run it before promoting any staging deployment to
+> production. It queries staging-slot response times against the stored baseline and either approves
+> the swap (within 20% threshold) or blocks it and files a GitHub issue. This prevents bad code from
+> reaching production in the first place, complementing the reactive `DeploymentHealthCheck` that
+> detects regressions after a swap.
 
 ### 6) Run the live demo
 
@@ -135,7 +143,7 @@ Typical session (end-to-end):
   - Confirm the SRE Agent is ready to act:
     - Deployed in the same resource group as the App Service
     - Access level is **Privileged** and action mode is **Autonomous**
-    - Required subagents + triggers are configured (baseline writer + swap-alert health check)
+    - Required subagents + triggers are configured (baseline writer + swap-alert health check + pre-swap gate)
     - A fresh baseline artifact exists (commonly `baseline.txt`)
 
   Quick prep commands (safe, no secrets):
@@ -170,6 +178,7 @@ Typical session (end-to-end):
     -o json
   ```
 - Run
+  - **Optional proactive path**: Before swapping, trigger `PreSwapHealthGate` on-demand to validate the staging slot. If staging is unhealthy the gate blocks the swap and files a GitHub issue.
   - Swap `staging` → `production` and generate load (typically via `./scripts/02-run-demo.sh --yes`).
 - Detection + triage (after the incident fires)
   - The agent receives an incident like “Detected Sev2 alert: Proactive Reliability High Response Time” for the target App Service.
@@ -198,7 +207,23 @@ ASCII flow (typical):
                  |
                  v
   +------------------------------+
-  | Detected Sev2 slot-swap alert |
+  | [PROACTIVE] PreSwapHealthGate|  <-- run before any swap
+  | Query staging slot App       |
+  | Insights vs baseline         |
+  +--------------+---------------+
+                 |
+       +---------+-----------+
+       |                     |
+       v                     v
+  +-----------+   +----------------------+
+  | Staging   |   | Staging UNHEALTHY    |
+  | healthy   |   | Block swap +         |
+  | Proceed   |   | file GitHub issue    |
+  +-----+-----+   +----------------------+
+        |
+        v
+  +------------------------------+
+  | Detected Sev2 slot-swap alert|  <-- [REACTIVE] path
   +--------------+---------------+
                  |
                  v
