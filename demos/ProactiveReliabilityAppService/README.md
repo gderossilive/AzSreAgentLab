@@ -83,6 +83,7 @@ Use the YAML templates in `SubAgents/` as a starting point:
 - `SubAgents/AvgResponseBaseline.yaml`
 - `SubAgents/DeploymentHealthCheck.yaml`
 - `SubAgents/DeploymentReporter.yaml`
+- `SubAgents/PreSwapHealthGate.yaml`
 
 You must replace placeholders:
 - `<YOUR_SUBSCRIPTION_ID>`
@@ -105,6 +106,7 @@ Recommended triggers:
 - Scheduled trigger `BaselineTask` (every 15m) → subagent `AvgResponseTime`
 - Incident trigger `Swap Alert` (title contains `slot swap`) → subagent `DeploymentHealthCheck`
 - Scheduled trigger `ReporterTask` (daily) → subagent `DeploymentReporter`
+- Incident trigger `Pre-Swap Gate` (title contains `slot swap` and fires before slot activation) → subagent `PreSwapHealthGate`
 
 ### 6) Run the live demo
 
