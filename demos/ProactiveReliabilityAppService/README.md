@@ -83,6 +83,7 @@ Use the YAML templates in `SubAgents/` as a starting point:
 - `SubAgents/AvgResponseBaseline.yaml`
 - `SubAgents/DeploymentHealthCheck.yaml`
 - `SubAgents/DeploymentReporter.yaml`
+- `SubAgents/PreSwapHealthGate.yaml`
 
 You must replace placeholders:
 - `<YOUR_SUBSCRIPTION_ID>`
@@ -105,6 +106,9 @@ Recommended triggers:
 - Scheduled trigger `BaselineTask` (every 15m) → subagent `AvgResponseTime`
 - Incident trigger `Swap Alert` (title contains `slot swap`) → subagent `DeploymentHealthCheck`
 - Scheduled trigger `ReporterTask` (daily) → subagent `DeploymentReporter`
+- Incident trigger `Pre-Swap Gate` (title contains `pre-swap` or fired manually before any staging→production swap) → subagent `PreSwapHealthGate`
+
+> **`PreSwapHealthGate`** queries the staging slot's response time (last 5 minutes) from Application Insights and compares it against the stored baseline. If staging exceeds the baseline by ≥20%, the swap is blocked and the team is notified via Teams. Only healthy staging slots are promoted to production.
 
 ### 6) Run the live demo
 
