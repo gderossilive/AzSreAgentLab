@@ -1,0 +1,16 @@
+nohup: ignoring input
+Loaded .env (tenant=86d068c0-1c9f-4b9e-939d-15146ccf2ad6, sub=06dbbc7b-2363-4dd4-9803-95d07f1a8d3e, location=swedencentral)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generating Traffic to Octopets Application
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  Frontend URL:         https://octopetsfe.braverock-6af09f75.swedencentral.azurecontainerapps.io
+  API URL:              https://octopetsapi.braverock-6af09f75.swedencentral.azurecontainerapps.io
+  Duration:             15 minutes
+  Requests/minute:      30
+  Sleep between calls:  2s
+
+Press Ctrl+C to stop...
+
+[00:32] Request #10 - FE: ✓ (/listing/2) API: ✗ (/api/listings/2) [14:28 left][01:11] Request #20 - FE: ✓ (/listing/4) API: ✓ (/api/listings) [13:49 left][01:49] Request #30 - FE: ✓ (/listing/1) API: ✗ (/api/listings/2) [13:11 left]
