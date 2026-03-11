@@ -33,7 +33,11 @@ This lab deploys:
 4. **Grocery SRE Demo (Container Apps + Managed Grafana + MCP)** (`demos/GrocerySreDemo/`)
    - Sample “grocery” app (API + web) with an optional Loki log pipeline and optional Grafana MCP integration
    - Useful for demos that involve querying Grafana dashboards/logs via MCP (e.g., from agents)
-
+5. **Grubify Incident Lab (azd-based, 3 personas)** (`demos/GrubifyIncidentLab/`)
+   - Standalone `azd up` demo: deploys Grubify (Node.js food ordering app) with intentional memory leak
+   - Three acts: IT Ops (autonomous diagnosis/remediation), Developer (code analysis → GitHub issue), Workflow (issue triage)
+   - Bicep infrastructure, knowledge base, subagents, and response plan deployed via post-provision hook
+   - See [Grubify Incident Lab Demo](demos/GrubifyIncidentLab/README.md) for details
 ### Demo → scripts map
 
 | Demo | Demo folder | Key config files | Related scripts (run order) |
@@ -42,6 +46,7 @@ This lab deploys:
 | ServiceNow Incident Automation (Azure Monitor alerts → ServiceNow incident → SRE Agent subagent) | [demos/ServiceNowAzureResourceHandler/](demos/ServiceNowAzureResourceHandler/) | [demos/ServiceNowAzureResourceHandler/README.md](demos/ServiceNowAzureResourceHandler/README.md), [demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml](demos/ServiceNowAzureResourceHandler/servicenow-subagent-simple.yaml), [demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep](demos/ServiceNowAzureResourceHandler/servicenow-logic-app.bicep), [demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep](demos/ServiceNowAzureResourceHandler/octopets-service-now-alerts.bicep) | [scripts/50-deploy-logic-app.sh](scripts/50-deploy-logic-app.sh) → [scripts/50-deploy-alert-rules.sh](scripts/50-deploy-alert-rules.sh) → [scripts/63-enable-memory-errors.sh](scripts/63-enable-memory-errors.sh) (or [scripts/61-enable-cpu-stress.sh](scripts/61-enable-cpu-stress.sh)) → [scripts/60-generate-traffic.sh](scripts/60-generate-traffic.sh) → verify with [scripts/61-check-memory.sh](scripts/61-check-memory.sh) → cleanup: [scripts/64-disable-memory-errors.sh](scripts/64-disable-memory-errors.sh) / [scripts/62-disable-cpu-stress.sh](scripts/62-disable-cpu-stress.sh) |
 | Proactive Reliability (App Service slot swap → expected rollback) | [demos/ProactiveReliabilityAppService/](demos/ProactiveReliabilityAppService/) | [demos/ProactiveReliabilityAppService/README.md](demos/ProactiveReliabilityAppService/README.md), [demos/ProactiveReliabilityAppService/demo-config.json](demos/ProactiveReliabilityAppService/demo-config.json), [demos/ProactiveReliabilityAppService/SubAgents/](demos/ProactiveReliabilityAppService/SubAgents/) | [demos/ProactiveReliabilityAppService/scripts/01-setup-demo.sh](demos/ProactiveReliabilityAppService/scripts/01-setup-demo.sh) → [demos/ProactiveReliabilityAppService/scripts/02-run-demo.sh](demos/ProactiveReliabilityAppService/scripts/02-run-demo.sh) → (optional) [demos/ProactiveReliabilityAppService/scripts/03-reset-demo.sh](demos/ProactiveReliabilityAppService/scripts/03-reset-demo.sh) |
 | Grocery SRE Demo (Container Apps + Managed Grafana + MCP) | [demos/GrocerySreDemo/](demos/GrocerySreDemo/) | [demos/GrocerySreDemo/README.md](demos/GrocerySreDemo/README.md), [demos/GrocerySreDemo/demo-config.json](demos/GrocerySreDemo/demo-config.json) | [demos/GrocerySreDemo/scripts/01-setup-demo.sh](demos/GrocerySreDemo/scripts/01-setup-demo.sh) → [demos/GrocerySreDemo/scripts/02-build-and-deploy-containers.sh](demos/GrocerySreDemo/scripts/02-build-and-deploy-containers.sh) → [demos/GrocerySreDemo/scripts/03-smoke-and-trigger.sh](demos/GrocerySreDemo/scripts/03-smoke-and-trigger.sh) |
+| Grubify Incident Lab (azd-based, 3 personas) | [demos/GrubifyIncidentLab/](demos/GrubifyIncidentLab/) | [demos/GrubifyIncidentLab/README.md](demos/GrubifyIncidentLab/README.md), [demos/GrubifyIncidentLab/azure.yaml](demos/GrubifyIncidentLab/azure.yaml) | `cd demos/GrubifyIncidentLab && azd up` → [demos/GrubifyIncidentLab/scripts/break-app.sh](demos/GrubifyIncidentLab/scripts/break-app.sh) |
 
 ## 📋 Architecture
 
@@ -217,6 +222,14 @@ Then follow the same happy-path deployment sequence above.
 │       ├── README.md      # Grocery SRE demo execution guide
 │       ├── infrastructure/ # Bicep templates for optional components (Loki, MCP)
 │       └── scripts/       # Deploy/test scripts
+│   └── GrubifyIncidentLab/
+│       ├── README.md      # Grubify incident lab guide (3 personas)
+│       ├── azure.yaml     # azd template entry point
+│       ├── infrastructure/ # Bicep (subscription-scoped main + 6 modules)
+│       ├── knowledge/     # SRE knowledge base (4 MD runbooks)
+│       ├── sre-config/    # Subagent YAMLs + GitHub MCP connector
+│       ├── scripts/       # post-provision.sh, break-app.sh, helpers
+│       └── src/           # Grubify app source (clone from GitHub)
 └── external/
     ├── octopets/          # Octopets sample app
     └── sre-agent/         # SRE Agent reference repo
@@ -235,6 +248,10 @@ Reusable prompt templates live under [.github/prompts/](.github/prompts/).
 - ServiceNow demo run: [.github/prompts/ServiceNowDemoRun.prompt.md](.github/prompts/ServiceNowDemoRun.prompt.md)
 - ServiceNow demo stop/cleanup: [.github/prompts/ServiceNowDemoStop.prompt.md](.github/prompts/ServiceNowDemoStop.prompt.md)
 - Instance memory setup: [.github/prompts/MemorySetup.prompt.md](.github/prompts/MemorySetup.prompt.md)
+- Grubify lab setup: [.github/prompts/GrubifyLabSetup.prompt.md](.github/prompts/GrubifyLabSetup.prompt.md)
+- Grubify incident demo (Act 1 – IT Ops): [.github/prompts/Demo4-GrubifyIncident.prompt.md](.github/prompts/Demo4-GrubifyIncident.prompt.md)
+- Grubify code analysis demo (Act 2 – Developer): [.github/prompts/Demo5-GrubifyCodeAnalysis.prompt.md](.github/prompts/Demo5-GrubifyCodeAnalysis.prompt.md)
+- Grubify issue triage demo (Act 3 – Workflow): [.github/prompts/Demo6-GrubifyIssueTriage.prompt.md](.github/prompts/Demo6-GrubifyIssueTriage.prompt.md)
 
 ### External repositories (vendored copies)
 
