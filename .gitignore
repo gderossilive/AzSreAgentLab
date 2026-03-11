@@ -1,5 +1,6 @@
 .env
 **/.azure/
+**/demo-config.json
 
 # Instance-specific project memory (do not commit)
 .docs/memory.md

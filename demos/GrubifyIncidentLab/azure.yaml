@@ -1,0 +1,17 @@
+# Azure Developer CLI (azd) template for Grubify Incident Lab
+# Run from this directory: azd up
+name: grubify-incident-lab
+metadata:
+  template: grubify-incident-lab@1.0.0
+
+infra:
+  provider: bicep
+  path: infrastructure
+
+# No services block — container image is built in the cloud via ACR Tasks
+# in the post-provision hook. No Docker Desktop needed.
+
+hooks:
+  postprovision:
+    shell: sh
+    run: bash ./scripts/post-provision.sh
