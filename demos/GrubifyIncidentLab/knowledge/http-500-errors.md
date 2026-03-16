@@ -1,458 +1,400 @@
 # HTTP 500 Error Investigation Runbook
 
 ## Trigger Keywords
-`500 error`, `internal server error`, `HTTP 500`, `server error`, `application error`, `unresponsive`
+`500 error`, `internal server error`, `HTTP 500`, `server error`, `application error`, `memory leak`, `OOM`, `cart API`
 
 ## Scope
-Azure Container Apps endpoints returning HTTP 500 errors. Logs stored in Log Analytics Workspace.
+This runbook is for the actual Grubify Incident Lab in `demos/GrubifyIncidentLab`.
 
-## Valid Azure Monitor Metric Names for Container Apps
-**IMPORTANT: Use ONLY these metric names with `az monitor metrics list`:**
-- `UsageNanoCores` — CPU usage (NOT CpuUsage, NOT CPUUsage)
-- `WorkingSetBytes` — Memory usage (NOT MemoryUsage, NOT MemoryWorkingSet)
-- `Requests` — HTTP request count
-- `RestartCount` — Container restarts (OOM indicator)
-- `Replicas` — Active replica count
-- `CpuPercentage` — CPU percentage
-- `MemoryPercentage` — Memory percentage
+Use it when the backend Azure Container App deployed by this lab starts returning HTTP 5xx and Azure Monitor routes the incident to the SRE Agent.
 
-## Container App Logs CLI
-**Use `az containerapp logs show` with `--tail` (NOT `--since`):**
+This runbook is tied to:
+
+- Azure deployment: `demos/GrubifyIncidentLab/azure.yaml`
+- Infrastructure: `demos/GrubifyIncidentLab/infrastructure/`
+- Post-provision automation: `demos/GrubifyIncidentLab/scripts/post-provision.sh`
+- Application source: `demos/GrubifyIncidentLab/src/grubify`
+- Upstream GitHub repository: `https://github.com/dm-chelupati/grubify.git`
+
+This lab primarily uses:
+
+- Azure Monitor resource metrics
+- Log Analytics tables for Azure Container Apps
+- Container Apps control plane and logs
+
+Do not assume rich application telemetry in Application Insights for the Grubify API. In the current implementation, Application Insights is wired to SRE Agent logging, not to full app request/dependency instrumentation.
+
+---
+
+## Lab-Specific Facts
+
+### Deployed Application Shape
+
+- Backend: ASP.NET Core Web API
+- Frontend: React
+- Backend Container App name pattern: `ca-grubify-${uniqueSuffix}`
+- Frontend Container App name pattern: `ca-grubify-fe-${uniqueSuffix}`
+- Container Apps environment name pattern: `cae-${uniqueSuffix}`
+- Resource group name pattern: `rg-${environmentName}`
+
+### Active Alert Configuration
+
+The demo deploys one primary alert for this scenario:
+
+- Resource: backend Container App
+- Metric namespace: `microsoft.app/containerapps`
+- Metric: `Requests`
+- Dimension: `statusCodeCategory = 5xx`
+- Threshold: `> 5` in `5` minutes
+- Severity: `3`
+- Alert name pattern: `alert-http-5xx-${environmentName}`
+
+### Most Likely Root Cause In This Lab
+
+The primary intentional failure path is in:
+
+- `src/grubify/GrubifyApi/Controllers/CartController.cs`
+
+The `POST /api/cart/{userId}/items` endpoint allocates and retains a new `10 MB` byte array on every request:
+
+```csharp
+var requestData = new byte[10 * 1024 * 1024];
+RequestDataCache.Add(requestData);
+```
+
+Repeated requests to `/api/cart/demo-user/items` cause steady memory growth until the API starts returning HTTP 5xx and may restart under memory pressure.
+
+### Important Endpoint Notes
+
+- There is no dedicated `/health` endpoint in the current API.
+- There is no `/api/menu` endpoint in the current API.
+- Prefer these endpoints for validation:
+  - `GET /weatherforecast`
+  - `GET /api/restaurants`
+  - `GET /api/fooditems`
+  - `POST /api/cart/demo-user/items`
+
+---
+
+## Valid Azure Monitor Metric Names For Container Apps
+
+Use only these metric names with `az monitor metrics list`:
+
+- `UsageNanoCores` for CPU usage
+- `WorkingSetBytes` for memory usage
+- `Requests` for request count
+- `RestartCount` for container restarts
+- `Replicas` for active replica count
+- `CpuPercentage` for CPU percentage
+- `MemoryPercentage` for memory percentage
+
+---
+
+## Investigation Workflow
+
+## Phase 1: Identify The Actual Backend Resource
+
+Resolve the current environment values first. The lab writes them into the azd environment.
+
 ```bash
-az containerapp logs show -g <resourceGroup> -n <appName> --tail 300
-az containerapp logs show -g <resourceGroup> -n <appName> --tail 300 --format text
+cd demos/GrubifyIncidentLab
+
+azd env get-value AZURE_RESOURCE_GROUP
+azd env get-value CONTAINER_APP_NAME
+azd env get-value CONTAINER_APP_URL
+azd env get-value FRONTEND_APP_NAME
+azd env get-value SRE_AGENT_NAME
+azd env get-value SRE_AGENT_ENDPOINT
+```
+
+You should expect values shaped like:
+
+- Resource group: `rg-<environmentName>`
+- Backend app: `ca-grubify-<suffix>`
+- Frontend app: `ca-grubify-fe-<suffix>`
+
+Get the backend resource ID because it is needed for metrics queries:
+
+```bash
+RG=$(azd env get-value AZURE_RESOURCE_GROUP)
+APP=$(azd env get-value CONTAINER_APP_NAME)
+
+az containerapp show -g "$RG" -n "$APP" --query id -o tsv
 ```
 
 ---
 
-## Phase 1: CPU and Memory Metrics (Check First)
+## Phase 2: Confirm The Symptom On Real Endpoints
 
-### 1.1 CPU Metrics (App Insights / Azure Monitor)
-```kql
-performanceCounters
-| where timestamp > ago(1h)
-| where name == "% Processor Time" or name contains "CPU"
-| summarize AvgCPU = avg(value), MaxCPU = max(value) by bin(timestamp, 5m)
-| order by timestamp desc
+Do not use `/health` or `/api/menu` for this lab.
+
+```bash
+APP_URL=$(azd env get-value CONTAINER_APP_URL)
+
+curl -i "$APP_URL/weatherforecast"
+curl -i "$APP_URL/api/restaurants"
+curl -i "$APP_URL/api/fooditems"
+curl -i -X POST "$APP_URL/api/cart/demo-user/items" \
+  -H "Content-Type: application/json" \
+  -d '{"foodItemId":1,"quantity":1}'
 ```
 
-### 1.2 Memory Usage Over Time
-```kql
-performanceCounters
-| where timestamp > ago(1h)
-| where name contains "Memory" or name == "Available Bytes" or name == "Private Bytes"
-| summarize AvgMemory = avg(value), MaxMemory = max(value) by bin(timestamp, 5m), name
-| order by timestamp desc
+Interpretation:
+
+- If `restaurants` and `fooditems` are still `200` but `cart` is failing, suspect the intentional memory leak path first.
+- If all endpoints fail, check for app restart loops, revision issues, or broad resource exhaustion.
+
+---
+
+## Phase 3: Check Metrics First
+
+Start with backend Container App metrics. This lab is designed so metrics are often the highest-signal evidence.
+
+### 3.1 Azure CLI Metrics
+
+```bash
+RESOURCE_ID=$(az containerapp show -g "$RG" -n "$APP" --query id -o tsv)
+START=$(date -u -d '1 hour ago' +"%Y-%m-%dT%H:%M:%SZ")
+END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+az monitor metrics list --resource "$RESOURCE_ID" --metric "WorkingSetBytes" --interval PT5M --start-time "$START" --end-time "$END"
+az monitor metrics list --resource "$RESOURCE_ID" --metric "MemoryPercentage" --interval PT5M --start-time "$START" --end-time "$END"
+az monitor metrics list --resource "$RESOURCE_ID" --metric "RestartCount" --interval PT5M --start-time "$START" --end-time "$END"
+az monitor metrics list --resource "$RESOURCE_ID" --metric "Requests" --interval PT5M --start-time "$START" --end-time "$END"
+az monitor metrics list --resource "$RESOURCE_ID" --metric "CpuPercentage" --interval PT5M --start-time "$START" --end-time "$END"
 ```
 
-### 1.3 Container App Metrics via Azure Monitor
+### 3.2 AzureMetrics KQL
+
 ```kql
 AzureMetrics
 | where TimeGenerated > ago(1h)
 | where ResourceProvider == "MICROSOFT.APP"
-| where MetricName in ("UsageNanoCores", "WorkingSetBytes", "Requests", "RestartCount")
-| summarize AvgValue = avg(Average), MaxValue = max(Maximum) by bin(TimeGenerated, 5m), MetricName
+| where ResourceId has "/containerApps/ca-grubify-"
+| where MetricName in ("WorkingSetBytes", "MemoryPercentage", "RestartCount", "Requests", "CpuPercentage")
+| summarize AvgValue = avg(Average), MaxValue = max(Maximum), Total = sum(Total) by bin(TimeGenerated, 5m), MetricName, ResourceId
 | order by TimeGenerated desc
 ```
 
-### 1.4 Get Metrics via Azure CLI
-```bash
-# List available metrics for container app
-az monitor metrics list-definitions --resource <resourceId>
+### Resource Interpretation
 
-# Get CPU usage metrics (last 1 hour)
-az monitor metrics list --resource <resourceId> --metric "UsageNanoCores" --interval PT5M --start-time $(date -u -d '1 hour ago' +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v-1H +"%Y-%m-%dT%H:%M:%SZ") --end-time $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-# Get Memory usage metrics (last 1 hour)
-az monitor metrics list --resource <resourceId> --metric "WorkingSetBytes" --interval PT5M --start-time $(date -u -d '1 hour ago' +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v-1H +"%Y-%m-%dT%H:%M:%SZ") --end-time $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-# Example with full resource ID:
-az monitor metrics list --resource "/subscriptions/cbf44432-7f45-4906-a85d-d2b14a1e8328/resourceGroups/rg-grubify-app/providers/Microsoft.App/containerApps/ca-grubify-api" --metric "UsageNanoCores" --interval PT5M
-```
-
-### 1.5 Memory Pressure Indicators
-```kql
-ContainerAppConsoleLogs_CL
-| where TimeGenerated > ago(1h)
-| where Log_s contains "OutOfMemory" 
-    or Log_s contains "OOM" 
-    or Log_s contains "memory pressure"
-    or Log_s contains "GC"
-    or Log_s contains "heap"
-| project TimeGenerated, Log_s, ContainerName_s
-| order by TimeGenerated desc
-```
-
-### 1.6 Detect High CPU Correlation with Errors
-```kql
-let highCpuTimes = performanceCounters
-| where timestamp > ago(1h)
-| where name contains "CPU"
-| where value > 80
-| summarize by bin(timestamp, 5m);
-requests
-| where timestamp > ago(1h)
-| where resultCode startswith "5"
-| summarize ErrorCount = count() by bin(timestamp, 5m)
-| join kind=inner highCpuTimes on timestamp
-| order by timestamp desc
-```
-
-### Resource Thresholds Reference
-| Metric | Warning | Critical | Action |
-|--------|---------|----------|--------|
-| CPU % | > 70% sustained | > 90% sustained | Scale out replicas |
-| Memory % | > 75% sustained | > 90% sustained | Scale up memory or fix leak |
-| Memory Working Set | Steadily increasing | Near limit | Investigate memory leak |
+| Signal | What it means in this lab |
+|--------|----------------------------|
+| `WorkingSetBytes` climbs steadily | Strong evidence of the cart leak |
+| `MemoryPercentage` trends toward 100 | Container approaching 1 Gi limit |
+| `RestartCount` increments | Likely OOM or crash restart |
+| `Requests` with 5xx alert firing | Confirms incident trigger path |
+| CPU moderate but memory high | More consistent with leak than CPU saturation |
 
 ---
 
-## Phase 2: Initial Triage
+## Phase 4: Inspect Container Logs
 
-### 2.1 Get Container App Details
+### 4.1 Container App Logs CLI
+
+Use `--tail`, not `--since`.
+
 ```bash
-# Show container app configuration
-az containerapp show -g <resourceGroup> -n <appName> --subscription <subId> --output json
-
-# Example:
-az containerapp show -g rg-grubify-app -n ca-grubify-api --subscription cbf44432-7f45-4906-a85d-d2b14a1e8328 --output json
+az containerapp logs show -g "$RG" -n "$APP" --tail 300
+az containerapp logs show -g "$RG" -n "$APP" --tail 300 --format text
 ```
 
-### 2.2 Get Current Revision Logs
-```bash
-# Get recent logs from active revision (last 300 lines)
-az containerapp logs show -g <resourceGroup> -n <appName> --subscription <subId> --revision <revisionId> --tail 300
+### 4.2 Console Log Query
 
-# Example:
-az containerapp logs show -g rg-octopets-nov9 -n octopetsapi --subscription cbf44432-7f45-4906-a85d-d2b14a1e8328 --revision octopetsapi--0000003 --tail 300
+The cart leak emits useful console messages from the application code.
 
-# If command fails, retry with --format text:
-az containerapp logs show -g rg-octopets-nov9 -n octopetsapi --subscription cbf44432-7f45-4906-a85d-d2b14a1e8328 --revision octopetsapi--0000003 --tail 300 --format text
-```
-
-### 2.3 Quick Error Count (KQL)
 ```kql
 ContainerAppConsoleLogs_CL
 | where TimeGenerated > ago(1h)
-| where Log_s contains "error" or Log_s contains "exception" or Log_s contains "500"
-| summarize ErrorCount = count() by bin(TimeGenerated, 5m)
+| where ContainerName_s contains "grubify"
+| where Log_s contains "Analytics cache" or Log_s contains "Cache size" or Log_s contains "error" or Log_s contains "exception" or Log_s contains "500"
+| project TimeGenerated, ContainerName_s, Log_s
+| order by TimeGenerated desc
+```
+
+These strings are especially relevant because `CartController` writes:
+
+- `Analytics cache: Added request data. Total entries: ...`
+- `Cache size: ...MB`
+
+### 4.3 System Log Query For Restarts
+
+```kql
+ContainerAppSystemLogs_CL
+| where TimeGenerated > ago(1h)
+| where ContainerName_s contains "grubify"
+| where Log_s contains "restart" or Log_s contains "crash" or Log_s contains "OOM" or Log_s contains "revision"
+| project TimeGenerated, ContainerName_s, RevisionName_s, Log_s
+| order by TimeGenerated desc
+```
+
+### 4.4 OOM-Focused Query
+
+```kql
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(1h)
+| where ContainerName_s contains "grubify"
+| where Log_s contains "OutOfMemory" or Log_s contains "OOM" or Log_s contains "memory pressure" or Log_s contains "heap" or Log_s contains "Cache size"
+| project TimeGenerated, ContainerName_s, Log_s
 | order by TimeGenerated desc
 ```
 
 ---
 
-## Phase 3: Identify Error Patterns
+## Phase 5: Correlate The Failure To Source Code
 
-### 3.1 Top Errors by Message
-```kql
-ContainerAppConsoleLogs_CL
-| where TimeGenerated > ago(1h)
-| where Log_s contains "error" or Log_s contains "exception"
-| extend ErrorMessage = extract("(Exception|Error|Failed|Fault).*", 0, Log_s)
-| summarize Count = count(), 
-    FirstSeen = min(TimeGenerated), 
-    LastSeen = max(TimeGenerated)
-by ErrorMessage
-| order by Count desc
-| take 10
+For this lab, source correlation should start with the local vendored repo and, if enabled, continue to GitHub.
+
+### Local Source Paths
+
+- Backend API: `demos/GrubifyIncidentLab/src/grubify/GrubifyApi`
+- Leak implementation: `demos/GrubifyIncidentLab/src/grubify/GrubifyApi/Controllers/CartController.cs`
+
+### Primary Root Cause Candidate
+
+Inspect `CartController.AddItemToCart` first.
+
+What to look for:
+
+1. Static mutable state that survives across requests.
+2. Request-scoped buffers retained indefinitely.
+3. Console logs proving cache growth.
+
+This lab’s main intentional fault satisfies all three.
+
+### Optional GitHub Correlation
+
+If GitHub PAT was configured during post-provisioning, the agent may have:
+
+- GitHub MCP connector: `github-mcp`
+- Repository target: `dm-chelupati/grubify` by default
+- GitHub-aware subagents: `incident-handler`, `code-analyzer`, `issue-triager`
+
+In that case, create or update a GitHub issue against the remote repository with:
+
+- incident summary
+- affected endpoint
+- metric evidence
+- log evidence
+- source-level root cause
+- remediation recommendation
+
+---
+
+## Phase 6: Recommended Remediation Paths
+
+Choose the least invasive action that restores service and preserves evidence.
+
+### Immediate Mitigations
+
+#### Option A: Restart The Active Revision
+
+Use when the service is already degraded and you need fast recovery.
+
+```bash
+az containerapp revision list -g "$RG" -n "$APP" -o table
+
+REVISION=$(az containerapp revision list -g "$RG" -n "$APP" --query "[?properties.active].name | [0]" -o tsv)
+az containerapp revision restart -g "$RG" -n "$APP" --revision "$REVISION"
 ```
 
-### 3.2 Failed HTTP Requests (App Insights)
+#### Option B: Increase Replica Floor
+
+Use when errors are intermittent and you need more headroom while the root cause is being fixed.
+
+```bash
+az containerapp update -g "$RG" -n "$APP" --min-replicas 3
+```
+
+#### Option C: Scale Memory-Constrained Workload
+
+If the incident pattern is clearly memory pressure and a temporary config change is acceptable, update the Container App resources through the deployment pipeline rather than by hand-editing infrastructure state without tracking it. Prefer a documented follow-up change in Bicep or the app definition.
+
+### When Not To Roll Back
+
+Do not default to rollback for this scenario. The common failure in this lab is not a generic bad deploy. It is an intentional code-level leak triggered through `/api/cart/demo-user/items`.
+
+---
+
+## Phase 7: App Insights Queries Are Optional Only
+
+The current Grubify API does not clearly configure rich request/dependency/exception telemetry to Application Insights. Queries against these tables may return sparse or empty results:
+
+- `requests`
+- `dependencies`
+- `exceptions`
+- `performanceCounters`
+
+Use them only as supplemental evidence if data exists. Do not block diagnosis on them.
+
+If data is present, these queries can still help:
+
 ```kql
 requests
 | where timestamp > ago(1h)
 | where resultCode startswith "5"
-| summarize FailedCount = count(), 
-    AvgDuration = avg(duration),
-    P95Duration = percentile(duration, 95)
-by name, resultCode, url
+| summarize FailedCount = count() by name, resultCode, url
 | order by FailedCount desc
-| take 20
 ```
 
-### 3.3 Error Rate Over Time
-```kql
-requests
-| where timestamp > ago(1h)
-| summarize 
-    Total = count(),
-    Failed = countif(resultCode startswith "5"),
-    ErrorRate = round(100.0 * countif(resultCode startswith "5") / count(), 2)
-by bin(timestamp, 5m)
-| order by timestamp desc
-```
-
----
-
-## Phase 4: Exception Details
-
-### 4.1 Top Exceptions with Stack Traces
 ```kql
 exceptions
 | where timestamp > ago(1h)
-| summarize Count = count(), 
-    FirstSeen = min(timestamp),
-    LastSeen = max(timestamp)
-by type, problemId, outerMessage
+| summarize Count = count() by type, outerMessage
 | order by Count desc
-| take 10
-```
-
-### 4.2 Full Exception Details (Sample)
-```kql
-exceptions
-| where timestamp > ago(1h)
-| project timestamp, type, outerMessage, innermostMessage, details, operation_Id
-| order by timestamp desc
-| take 5
-```
-
-### 4.3 Trace Correlation for Specific Error
-```kql
-// Replace <operation_Id> with value from exceptions query
-let targetOpId = "<operation_Id>";
-union requests, dependencies, traces, exceptions
-| where operation_Id == targetOpId
-| project timestamp, itemType, name, resultCode, duration, message, outerMessage
-| order by timestamp asc
-```
-
----
-
-## Phase 5: Dependency Health Check
-
-### 5.1 Failing Dependencies
-```kql
-dependencies
-| where timestamp > ago(1h)
-| where success == false
-| summarize FailureCount = count(), 
-    AvgDuration = avg(duration)
-by type, target, resultCode, name
-| order by FailureCount desc
-| take 10
-```
-
-### 5.2 Dependency Latency Spikes
-```kql
-dependencies
-| where timestamp > ago(1h)
-| summarize 
-    AvgDuration = avg(duration),
-    P95Duration = percentile(duration, 95),
-    P99Duration = percentile(duration, 99),
-    CallCount = count()
-by bin(timestamp, 5m), type, target
-| where P95Duration > 1000  // Flag slow dependencies (>1s)
-| order by timestamp desc
-```
-
-### 5.3 Database Connection Issues
-```kql
-dependencies
-| where timestamp > ago(1h)
-| where type == "SQL" or type contains "database" or type contains "cosmos"
-| summarize 
-    Total = count(),
-    Failed = countif(success == false),
-    AvgDuration = avg(duration)
-by target, name
-| extend FailRate = round(100.0 * Failed / Total, 2)
-| order by FailRate desc
-```
-
----
-
-## Phase 6: Container Health
-
-### 6.1 Container Restarts/Crashes
-```kql
-ContainerAppSystemLogs_CL
-| where TimeGenerated > ago(1h)
-| where Log_s contains "restart" or Log_s contains "crash" or Log_s contains "OOMKilled"
-| project TimeGenerated, Log_s, ContainerName_s, RevisionName_s
-| order by TimeGenerated desc
-```
-
-### 6.2 Resource Exhaustion (OOM)
-```kql
-ContainerAppConsoleLogs_CL
-| where TimeGenerated > ago(1h)
-| where Log_s contains "OutOfMemory" or Log_s contains "OOM" or Log_s contains "memory"
-| project TimeGenerated, Log_s, ContainerName_s
-| order by TimeGenerated desc
-```
-
-### 6.3 Check Managed Environment Health
-```bash
-az containerapp env show --ids <resourceId> --subscription <subId>
-```
-
----
-
-## Phase 7: Deployment Correlation
-
-### 7.1 Recent Deployments
-```kql
-ContainerAppSystemLogs_CL
-| where TimeGenerated > ago(24h)
-| where Log_s contains "revision" or Log_s contains "deploy"
-| project TimeGenerated, Log_s, RevisionName_s
-| order by TimeGenerated desc
-```
-
-### 7.2 Errors After Deployment (Timeline)
-```kql
-let deployTime = datetime(2025-12-19T10:00:00Z);  // Replace with actual deploy time
-ContainerAppConsoleLogs_CL
-| where TimeGenerated between (deployTime .. (deployTime + 2h))
-| where Log_s contains "error" or Log_s contains "exception"
-| summarize ErrorCount = count() by bin(TimeGenerated, 5m)
-| order by TimeGenerated asc
-```
-
----
-
-## Phase 8: User Impact Assessment
-
-### 8.1 Affected Users Count
-```kql
-requests
-| where timestamp > ago(1h)
-| where resultCode startswith "5"
-| summarize 
-    AffectedUsers = dcount(user_Id),
-    AffectedSessions = dcount(session_Id),
-    FailedRequests = count()
-```
-
-### 8.2 Geographic Distribution of Errors
-```kql
-requests
-| where timestamp > ago(1h)
-| where resultCode startswith "5"
-| summarize ErrorCount = count() by client_CountryOrRegion
-| order by ErrorCount desc
-| take 10
 ```
 
 ---
 
 ## Quick Diagnosis Checklist
 
-| Check | Phase | What to Look For |
-|-------|-------|------------------|
-| CPU/Memory spikes | Phase 1 | High CPU or memory = resource exhaustion |
-| Error spike timing | Phase 3.3 | Sudden spike = deployment or external trigger |
-| Exception type | Phase 4.1 | NullRef = code bug, Timeout = dependency |
-| Dependency failures | Phase 5.1 | DB/API connection issues |
-| Container restarts | Phase 6.1 | OOM = scale up or memory leak |
-| Recent deploy | Phase 7.1 | Errors started after deploy = rollback candidate |
+| Check | What to confirm |
+|-------|------------------|
+| Resource identity | You are analyzing `ca-grubify-*`, not the frontend app |
+| Trigger path | Alert came from backend `Requests` metric with 5xx dimension |
+| Endpoint validation | Use `/weatherforecast`, `/api/restaurants`, `/api/fooditems`, `/api/cart/...` |
+| Memory trend | `WorkingSetBytes` and `MemoryPercentage` rise before or during errors |
+| Restart evidence | `RestartCount` increases or system logs show restart/OOM events |
+| Cart leak evidence | Logs show `Analytics cache` or `Cache size` growth |
+| Source correlation | `CartController.AddItemToCart` retains `10 MB` buffers in static memory |
+| GitHub path | If MCP is configured, file/update issue in `dm-chelupati/grubify` |
 
 ---
 
-## Common Root Causes
+## Common Root Causes In This Lab
 
-| Symptom | Likely Cause | Next Step |
+| Symptom | Likely cause | Next step |
 |---------|--------------|-----------|
-| High CPU + errors | Resource exhaustion | Scale out replicas |
-| High Memory + OOM | Memory leak or undersized | Scale up memory, investigate leak |
-| Sudden spike after deploy | Bad code release | Rollback to previous revision |
-| Dependency timeouts | Database/API overload | Check dependency health |
-| Connection refused | Service down or network issue | Check target service status |
-| NullReferenceException | Code bug | Trace specific request, review code |
+| `POST /api/cart/.../items` fails first | Intentional cart memory leak | Gather memory/log evidence, restart or scale, file code fix |
+| Memory rises steadily, CPU not saturated | Leak, not CPU bottleneck | Prioritize memory evidence and restart history |
+| All endpoints fail after memory growth | Container restart loop or broad resource exhaustion | Inspect `RestartCount`, revision health, system logs |
+| 5xx appears after manual load test | Expected lab trigger from `break-app.sh` | Correlate timeline to cart POST flood |
 
 ---
 
 ## Escalation Criteria
 
-Escalate immediately if:
-- Error rate > 50% for 5+ minutes
-- All requests failing (100% error rate)
-- OOM kills happening repeatedly
-- Database connection pool exhausted
-- Multiple services affected simultaneously
+Escalate immediately if any of these are true:
+
+- Error rate remains high after restart or scale action.
+- `RestartCount` continues to rise after mitigation.
+- Both backend and frontend become unavailable.
+- The issue does not correlate to the cart leak and suggests a broader platform or deployment problem.
+- The agent lacks permission to execute the needed Container Apps action.
 
 ---
 
-## Phase 9: Send Analysis Email
+## Expected Investigation Summary
 
-After completing investigation, send an email summary to the incident stakeholders.
+When closing the incident or creating a GitHub issue, include:
 
-**Send to:** dchelupati@microsoft.com
+1. Backend app name, resource group, and incident time window.
+2. Alert that fired: backend `Requests` metric with 5xx dimension.
+3. Evidence from `AzureMetrics` showing memory growth and any restarts.
+4. Evidence from `ContainerAppConsoleLogs_CL` or `ContainerAppSystemLogs_CL`.
+5. Endpoint-level symptom, especially whether `/api/cart/demo-user/items` failed first.
+6. Root cause tied to `CartController.AddItemToCart` and the retained `10 MB` request buffers.
+7. Immediate mitigation taken, if any.
+8. Follow-up code fix recommendation.
 
-### Email Structure
-
-**Subject:** `[Incident {incidentID}] HTTP 500 Error Analysis - {appName}`
-
-**Body should include:**
-
-1. **Incident Summary**
-   - App name, environment, incident start time (UTC)
-   - Current error rate and affected user count
-
-2. **Key Findings**
-   - CPU/Memory status at time of incident
-   - Top error messages with counts
-   - Suspected root cause
-   - Timeline of when errors started
-
-3. **Evidence**
-   - Resource metrics (CPU/Memory charts or values)
-   - Top 3 exception types with sample stack traces
-   - Failing endpoints with request counts
-   - Dependency failures if applicable
-   - Include KQL queries used (for reproducibility)
-
-4. **Recommended Actions**
-   - Immediate: rollback, scale, restart
-   - Follow-up: code fix, config change, monitoring
-
-5. **Links**
-   - Incident link (PagerDuty/ServiceNow)
-   - Log Analytics workspace query link
-   - GitHub issue (if created)
-
-### Sample Email Template
-
-```
-Subject: [Incident INC0012345] HTTP 500 Error Analysis - ca-grubify-api
-
-## Summary
-- **App:** ca-grubify-api (Production)
-- **Incident Start:** 2025-12-19T14:30:00Z
-- **Error Rate:** 45% (was 0.1% before incident)
-- **Affected Users:** 1,247
-
-## Resource Status
-- **CPU:** 92% avg (Critical - exceeded 90% threshold)
-- **Memory:** 78% avg (Warning - approaching limit)
-
-## Key Findings
-- **Root Cause:** CPU saturation causing request timeouts
-- **Timeline:** CPU spike at 14:25 UTC, errors started at 14:28 UTC
-- **Top Exception:** TimeoutException (1,832 occurrences)
-
-## Evidence
-### Resource Metrics
-| Time (UTC) | CPU % | Memory % |
-|------------|-------|----------|
-| 14:25 | 45% | 72% |
-| 14:30 | 92% | 78% |
-| 14:35 | 95% | 81% |
-
-### Top Errors (Last Hour)
-| Error | Count | First Seen |
-|-------|-------|------------|
-| TimeoutException | 1,832 | 14:28 UTC |
-| SqlException | 445 | 14:30 UTC |
-
-## Recommended Actions
-1. **Immediate:** Scale out to 5 replicas (currently 2)
-2. **Follow-up:** Investigate CPU-intensive operation in OrderService.cs
-
-## Links
-- [PagerDuty Incident](https://pagerduty.com/incidents/INC0012345)
-- [Log Analytics Query](https://portal.azure.com/...)
-- [GitHub Issue #456](https://github.com/org/repo/issues/456)
-```
+That is the correct investigation path for HTTP 500 incidents in the Grubify Incident Lab as currently implemented in this repository.
