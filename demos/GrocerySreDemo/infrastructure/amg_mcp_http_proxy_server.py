@@ -193,6 +193,45 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _normalize_unix_epoch_ms(value: Any, *, field_name: str) -> int:
+    """Normalize a timestamp value to Unix epoch milliseconds.
+
+    Accepts Unix epoch milliseconds directly and also accepts Unix epoch seconds
+    for convenience. Rejects tiny relative values because the datasource tools
+    require absolute time bounds.
+    """
+
+    try:
+        normalized = int(value)
+    except Exception as exc:
+        raise ValueError(f"{field_name} must be an integer Unix epoch timestamp") from exc
+
+    if normalized <= 0:
+        raise ValueError(f"{field_name} must be > 0")
+
+    # Treat plausible Unix epoch seconds as seconds and convert to milliseconds.
+    if 1_000_000_000 <= normalized < 10_000_000_000:
+        return normalized * 1000
+
+    # Reject tiny values such as relative offsets or durations. They lead to
+    # invalid query windows like 1970-01-01T00:02:57Z when forwarded directly.
+    if normalized < 100_000_000_000:
+        raise ValueError(
+            f"{field_name} must be Unix epoch milliseconds; got {normalized}. "
+            "Relative values are not supported for datasource queries."
+        )
+
+    return normalized
+
+
+def _normalize_query_range_ms(start_value: Any, end_value: Any) -> tuple[int, int]:
+    start_ms = _normalize_unix_epoch_ms(start_value, field_name="fromMs/startTime")
+    end_ms = _normalize_unix_epoch_ms(end_value, field_name="toMs/endTime")
+    if end_ms <= start_ms:
+        raise ValueError("toMs/endTime must be greater than fromMs/startTime")
+    return start_ms, end_ms
+
+
 def _amw_query_endpoint() -> str:
     # Azure Monitor Workspace Prometheus query endpoint (workspace-scoped)
     return _env_str("AMW_QUERY_ENDPOINT").rstrip("/")
@@ -1715,6 +1754,16 @@ async def amgmcp_query_datasource(
                 "error": "fromMs/toMs (or startTime/endTime) are required",
             }
 
+        try:
+            start_ms, end_ms = _normalize_query_range_ms(start_ms, end_ms)
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "source": "prometheus",
+                "errorType": "ValueError",
+                "error": str(exc),
+            }
+
         proxy_err: Optional[dict[str, str]] = None
         amw_err: Optional[dict[str, str]] = None
         backend_resp: Optional[dict[str, Any]] = None
@@ -1797,6 +1846,16 @@ async def amgmcp_query_datasource(
                 "source": "loki-direct",
                 "errorType": "ValueError",
                 "error": "fromMs/toMs (or startTime/endTime) are required",
+            }
+
+        try:
+            start_ms, end_ms = _normalize_query_range_ms(start_ms, end_ms)
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "source": "loki-direct",
+                "errorType": "ValueError",
+                "error": str(exc),
             }
 
         try:

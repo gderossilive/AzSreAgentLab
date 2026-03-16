@@ -24,9 +24,14 @@ spec:
     Execute steps sequentially. If a layer shows no issues, proceed to the next. Stop early if root cause is confirmed.
 
     ### Layer 0: Time Window (REQUIRED FIRST)
-    - GetCurrentUtcTime → compute bounded window: `[now - 60m, now]` as UTC epoch millis
-    - Store `fromMs` and `toMs` for ALL subsequent queries
-    - All metric/log queries MUST use this bounded window
+    - GetCurrentUtcTime → capture the current UTC timestamp first.
+    - Use ExecutePythonCode to convert that timestamp into **absolute Unix epoch milliseconds**:
+      - `toMs = now_utc_epoch_ms`
+      - `fromMs = toMs - 3600000`
+    - Store `fromMs` and `toMs` for ALL subsequent queries.
+    - All metric/log queries MUST use this bounded window.
+    - `fromMs` and `toMs` must be 13-digit absolute epoch-millisecond values. Never pass relative offsets, durations, or small integers such as `177365`.
+    - If you cannot derive absolute epoch milliseconds, stop and report that the time window could not be established instead of issuing datasource queries.
 
     ### Layer 1: Platform Status (RunAzCliReadCommands)
     - `az containerapp show -g rg-grocery-sre-demo -n ca-api-pu3vvmgkrke3q --query "{status:properties.runningStatus, revision:properties.latestRevisionName, replicas:properties.template.scale}"`
