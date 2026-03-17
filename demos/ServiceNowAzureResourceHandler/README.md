@@ -176,82 +176,97 @@ curl -X GET \
 
 ## Running the Demo
 
-### Trigger Memory Leak
+The recommended execution path is the reusable Octopets incident trigger skill at [.github/skills/octopets-incident-trigger/SKILL.md](../../.github/skills/octopets-incident-trigger/SKILL.md). The steps below mirror that skill so the ServiceNow demo uses the same script-driven flow.
+
+### Trigger Octopets anomaly
+
+Run from the repository root:
 
 ```bash
-# Load environment
+cd /workspaces/AzSreAgentLab
 source scripts/load-env.sh
 
-# Enable memory leak feature flag
-az containerapp update \
-  -n octopetsapi \
-  -g $OCTOPETS_RG_NAME \
-  --set-env-vars "MEMORY_ERRORS=true"
+# Verify deployed inputs
+./scripts/20-az-login.sh
+echo "$OCTOPETS_RG_NAME"
+echo "$OCTOPETS_FE_URL"
+echo "$OCTOPETS_API_URL"
 
-# Wait for container restart (30-60 seconds)
-echo "Waiting for container to restart..."
-sleep 60
+az containerapp show -g "$OCTOPETS_RG_NAME" -n octopetsfe  --query '{name:name,status:properties.runningStatus}' -o table
+az containerapp show -g "$OCTOPETS_RG_NAME" -n octopetsapi --query '{name:name,status:properties.runningStatus}' -o table
 
-# Verify restart
-az containerapp replica list \
-  -n octopetsapi \
-  -g $OCTOPETS_RG_NAME \
-  --query '[].name' \
-  -o table
+# Enable both backend injectors
+./scripts/61-enable-cpu-stress.sh
+./scripts/63-enable-memory-errors.sh
 ```
 
-### Generate Memory Leak Traffic
+### Generate frontend and API traffic
 
-For a script-driven demo (recommended):
+For a short, reversible run:
 
 ```bash
+cd /workspaces/AzSreAgentLab
 source scripts/load-env.sh
 
-# Generate traffic for 20 minutes (adjust as needed)
-./scripts/60-generate-traffic.sh 20
+# Generate traffic for 15 minutes
+./scripts/60-generate-traffic.sh 15
 ```
 
-1. **Open Octopets Frontend**:
-   ```bash
-   echo "Frontend URL: $OCTOPETS_FE_URL"
-   # Open in browser
-   ```
+If you need additional pressure to trip the alerts, run two generators in parallel. This raises cost and resource pressure, so treat it as an escalation step.
 
-2. **Trigger Memory Leak**:
-   - Click on any product (e.g., "Octopus Plush")
-   - Click **"View Details"** button
-   - **Repeat 5-10 times** (each click loads images without cleanup)
-   - Memory usage will climb with each click
+```bash
+./scripts/60-generate-traffic.sh 15 &
+./scripts/60-generate-traffic.sh 15 &
+wait
+```
 
-3. **Monitor Progress**:
-   ```bash
-   # Watch memory usage (ARM)
-   RG="$OCTOPETS_RG_NAME"
-   RID=$(az containerapp show -n octopetsapi -g "$RG" --query id -o tsv)
+### Monitor progress
 
-   while true; do
-     TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-     START=$(date -u -d '-10 min' '+%Y-%m-%dT%H:%M:%SZ')
-     BYTES=$(az rest --method get --uri "https://management.azure.com$RID/providers/microsoft.insights/metrics?api-version=2018-01-01&metricnames=WorkingSetBytes&interval=PT1M&aggregation=Average&timespan=$START/$TS" --query "value[0].timeseries[0].data[-1].average" -o tsv 2>/dev/null || echo "na")
-     if [[ "$BYTES" != "na" ]]; then
-       python3 - <<PY
-import sys
-v=float("$BYTES")
-print(f"Memory: {v/1024/1024:.2f} MB")
-PY
-     else
-       echo "Memory: na"
-     fi
-     sleep 30
-   done
-   ```
+Validate the backend feature flags:
+
+```bash
+az containerapp show -g "$OCTOPETS_RG_NAME" -n octopetsapi \
+  --query "properties.template.containers[0].env[?name=='CPU_STRESS' || name=='MEMORY_ERRORS']" -o table
+```
+
+Capture the Container App resource IDs for Azure Portal navigation:
+
+```bash
+FE_ID=$(az containerapp show -g "$OCTOPETS_RG_NAME" -n octopetsfe  --query id -o tsv)
+API_ID=$(az containerapp show -g "$OCTOPETS_RG_NAME" -n octopetsapi --query id -o tsv)
+echo "FE_ID=$FE_ID"
+echo "API_ID=$API_ID"
+```
+
+Watch memory and request behavior on the backend via ARM metrics:
+
+```bash
+RG="$OCTOPETS_RG_NAME"
+RID=$(az containerapp show -n octopetsapi -g "$RG" --query id -o tsv)
+
+while true; do
+  TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  START=$(date -u -d '-10 min' '+%Y-%m-%dT%H:%M:%SZ')
+  az rest --method get \
+    --uri "https://management.azure.com$RID/providers/microsoft.insights/metrics?api-version=2018-01-01&metricnames=WorkingSetBytes,Requests,ResponseTime&interval=PT1M&timespan=$START/$TS" \
+    --query "value[].{metric:name.value,latest:timeseries[0].data[-1]}" \
+    -o json
+  sleep 30
+done
+```
+
+Expected symptoms during the run:
+
+- `./scripts/60-generate-traffic.sh` starts showing intermittent failures or slower responses for frontend and API calls
+- Azure Monitor metrics on `octopetsapi` show elevated CPU, memory, request volume, and possibly `5xx`
+- Alert processing and ServiceNow incident creation typically lag the trigger by several minutes because of metric rollups and alert evaluation windows
 
 ### Expected Workflow Timeline
 
 | Time | Event | What Happens |
 |------|-------|--------------|
-| T+0 min | Trigger leak | Click "View Details" 5-10 times on frontend |
-| T+2 min | Memory climbs | Memory usage crosses 80% threshold |
+| T+0 min | Trigger anomaly | Enable CPU stress and memory errors, then start traffic generation |
+| T+2 min | Resource pressure climbs | Backend CPU and memory rise under sustained API traffic |
 | T+5 min | Alert fires | Azure Monitor evaluates 5-minute window |
 | T+5 min | ServiceNow incident | Webhook creates incident (Priority: High) |
 | T+6 min | SRE Agent polls | Agent detects new incident via API query |
@@ -312,7 +327,7 @@ Note: ServiceNow developer instances can hibernate. If the instance is asleep, A
 
 **Expected Incident Fields**:
 - **Number**: INC0010001 (auto-incremented)
-- **Short Description**: "Octopets API - High Memory Usage Alert"
+- **Short Description**: "Octopets API - High Memory Usage Alert" or another Octopets alert raised by the active rule set
 - **Priority**: 2 - High
 - **State**: Initially "1 - New", then "6 - Resolved"
 - **Work Notes**: Investigation results from SRE Agent
@@ -347,7 +362,7 @@ echo "GitHub Repository: https://github.com/<your-org>/<your-repo>/issues"
 ```
 
 **Expected Issue Content**:
-- **Title**: "Memory Leak Detected in Octopets API"
+- **Title**: "Memory Leak Detected in Octopets API" or similar incident-specific title generated from the alert context
 - **Body**:
   - ServiceNow incident number and link
   - Log analysis with error patterns
@@ -359,7 +374,7 @@ echo "GitHub Repository: https://github.com/<your-org>/<your-repo>/issues"
 ### 5. Check Email Notification
 
 **Search Inbox**:
-- **Subject**: "ServiceNow Incident INC0010001 - Octopets API Memory Leak"
+- **Subject**: "ServiceNow Incident INC0010001 - Octopets API Memory Leak" or similar alert-derived subject
 - **From**: Azure SRE Agent (via managed identity)
 - **Contains**:
   - Incident summary
@@ -370,22 +385,17 @@ echo "GitHub Repository: https://github.com/<your-org>/<your-repo>/issues"
 
 ## Cleanup
 
-### Stop Memory Leak
+### Stop Octopets anomaly
 
 ```bash
-# Disable MEMORY_ERRORS flag
-az containerapp update \
-  -n octopetsapi \
-  -g $OCTOPETS_RG_NAME \
-  --set-env-vars "MEMORY_ERRORS=false"
+cd /workspaces/AzSreAgentLab
+source scripts/load-env.sh
 
-# Restart to clear memory
-az containerapp update \
-  -n octopetsapi \
-  -g rg-octopets-lab \
-  --query 'properties.provisioningState'
+./scripts/62-disable-cpu-stress.sh
+./scripts/64-disable-memory-errors.sh
 
-echo "Memory leak disabled. Container restarting..."
+az containerapp show -g "$OCTOPETS_RG_NAME" -n octopetsapi \
+  --query "properties.template.containers[0].env[?name=='CPU_STRESS' || name=='MEMORY_ERRORS']" -o table
 ```
 
 ### Delete Alert Rules (Optional)
