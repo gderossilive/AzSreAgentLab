@@ -50,6 +50,7 @@ FRONTEND_APP_NAME=$(azd env get-value FRONTEND_APP_NAME 2>/dev/null || echo "")
 ACR_NAME=$(azd env get-value AZURE_CONTAINER_REGISTRY_NAME 2>/dev/null || echo "")
 GITHUB_PAT_VALUE=$(azd env get-value GITHUB_PAT 2>/dev/null || echo "")
 GITHUB_USER=$(azd env get-value GITHUB_USER 2>/dev/null || echo "")
+GITHUB_REPO_VALUE=$(azd env get-value GITHUB_REPO 2>/dev/null || echo "")
 # azd env get-value outputs error text when key is missing — clean it up
 if echo "$GITHUB_PAT_VALUE" | grep -q "ERROR\|not found"; then
   GITHUB_PAT_VALUE=""
@@ -57,9 +58,15 @@ fi
 if echo "$GITHUB_USER" | grep -q "ERROR\|not found"; then
   GITHUB_USER=""
 fi
+if echo "$GITHUB_REPO_VALUE" | grep -q "ERROR\|not found"; then
+  GITHUB_REPO_VALUE=""
+fi
 export GITHUB_PAT_VALUE
-# Build the repo name from username (defaults to dm-chelupati if not set)
-export GITHUB_REPO="${GITHUB_USER:+${GITHUB_USER}/grubify}"
+# Prefer an explicit repo, otherwise derive from username and finally fall back to the upstream demo repo.
+export GITHUB_REPO="${GITHUB_REPO_VALUE}"
+if [ -z "$GITHUB_REPO" ] && [ -n "$GITHUB_USER" ]; then
+  GITHUB_REPO="${GITHUB_USER}/grubify"
+fi
 GITHUB_REPO="${GITHUB_REPO:-dm-chelupati/grubify}"
 export GITHUB_REPO
 
