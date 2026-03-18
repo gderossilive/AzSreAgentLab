@@ -260,6 +260,7 @@ Reusable demo skills live under [.github/skills/](.github/skills/).
 - Run Proactive Reliability slot swap for Demo1: [.github/skills/proactive-reliability-slot-swap/SKILL.md](.github/skills/proactive-reliability-slot-swap/SKILL.md)
 - Run Grubify incident demo for Demo4: [.github/skills/grubify-incident/SKILL.md](.github/skills/grubify-incident/SKILL.md)
 - Run Grubify issue triage demo for Demo6: [.github/skills/grubify-issue-triage/SKILL.md](.github/skills/grubify-issue-triage/SKILL.md)
+- Start or stop SRE Agents (all or filtered by RG/name): [.github/skills/sre-agent-power/SKILL.md](.github/skills/sre-agent-power/SKILL.md)
 
 ### External repositories (vendored copies)
 
