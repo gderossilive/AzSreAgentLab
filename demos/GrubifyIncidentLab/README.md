@@ -53,7 +53,7 @@ When memory hits the 1 Gi container limit, the app OOMs or returns HTTP 500 erro
 ## Quickstart
 
 ```bash
-cd demos/GrubifyIncidentLab
+# From the GrubifyIncidentLab repo root:
 
 # Clone Grubify source (needed for ACR build)
 git clone https://github.com/dm-chelupati/grubify.git src/grubify
@@ -117,7 +117,7 @@ The `issue-triager` runs on a 12-hour schedule and will:
 ## Cleanup
 
 ```bash
-cd demos/GrubifyIncidentLab
+# From the GrubifyIncidentLab repo root:
 azd down --force --purge
 ```
 

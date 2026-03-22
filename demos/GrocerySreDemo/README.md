@@ -1,6 +1,6 @@
 # Grocery SRE Demo (Container Apps + Grafana + SRE Agent)
 
-This demo is based on the reference app in `external/grocery-sre-demo`, adapted to this lab’s conventions:
+This demo is based on the reference app in `external/grocery-sre-demo` (vendored in the AzSreAgentLab monorepo), adapted to this lab's conventions:
 
 - Deploys infrastructure with Bicep (no `azd` required)
 - Builds container images with ACR remote build (`az acr build`) (no local Docker required)
@@ -18,7 +18,8 @@ The setup script deploys:
 - Container Apps placeholders for `api` and `web`
 - Azure SRE Agent (dedicated to this scenario)
 
-Then you build and deploy the real `api`/`web` images from `external/grocery-sre-demo/src`.
+Then you build and deploy the real `api`/`web` images from `external/grocery-sre-demo/src`
+(located in the AzSreAgentLab monorepo root — `az acr build` uses that root as build context).
 
 ## Prerequisites
 
@@ -27,12 +28,11 @@ Then you build and deploy the real `api`/`web` images from `external/grocery-sre
 
 ## Deploy
 
-From repo root:
+Run these commands from the `GrocerySreDemo` root directory:
 
 1) Deploy infra + SRE Agent and write `demo-config.json`:
 
 ```bash
-cd demos/GrocerySreDemo
 ./scripts/01-setup-demo.sh \
   --subscription-id 06dbbc7b-2363-4dd4-9803-95d07f1a8d3e \
   --location swedencentral \
@@ -44,7 +44,6 @@ cd demos/GrocerySreDemo
 2) Build and deploy the app containers (ACR remote builds):
 
 ```bash
-cd demos/GrocerySreDemo
 ./scripts/02-build-and-deploy-containers.sh
 ```
 

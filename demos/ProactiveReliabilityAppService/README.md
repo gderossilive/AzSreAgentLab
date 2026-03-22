@@ -141,7 +141,7 @@ Typical session (end-to-end):
   Quick prep commands (safe, no secrets):
 
   ```bash
-  cd /workspaces/AzSreAgentLab/demos/ProactiveReliabilityAppService
+  # From the ProactiveReliabilityAppService repo root:
 
   # Show current demo values
   python3 - <<'PY'
@@ -345,4 +345,4 @@ az group delete -n rg-sre-proactive-demo --yes --no-wait
 
 This demo is derived from the vendored upstream sample under:
 
-- `external/sre-agent/samples/proactive-reliability/`
+- `external/sre-agent/samples/proactive-reliability/` (in the AzSreAgentLab monorepo)
