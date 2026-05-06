@@ -177,13 +177,15 @@ Typical session (end-to-end):
   - It retrieves the most recent stored baseline (for example from `baseline.txt`).
   - It compares timestamps (current must be newer) and response time vs baseline (for example, >20% regression threshold) to decide whether remediation is required.
 - Remediation + verification
-  - It verifies the app/slot state (staging slot present; app reachable).
-  - It executes the remediation slot swap (swap `staging` → `production`, or swap back depending on which slot is healthy).
-  - It re-queries Application Insights to confirm improvement.
+  - It checks staging response time before swapping to confirm staging is actually healthier.
+  - It executes the remediation slot swap (swap `staging` → `production`) only when staging is faster.
+  - It waits 3 minutes after the swap for the new slot to warm up (cold starts can spike latency).
+  - It re-queries Application Insights to confirm improvement after the warmup window.
+  - If post-swap response time is still elevated (>20% over baseline), it automatically swaps back.
 - Comms + closure
-  - It posts a short deployment/health summary (for example to Teams) with links/metrics.
-  - Optionally, it opens a GitHub issue capturing findings and recommendations.
-  - It records an incident closure note (for example: “Impact cleared. App Service response time back to baseline; no residual impact.”).
+  - It posts a deployment/health summary (for example to Teams) with pre-swap, staging, and post-swap metrics.
+  - It opens a GitHub issue capturing findings and recommendations (always when a regression was detected).
+  - Outcomes: “Resolved by swap”, “Swap reverted - post-swap still degraded”, or “No swap performed - both slots degraded”.
 
 ASCII flow (typical):
 
@@ -203,8 +205,8 @@ ASCII flow (typical):
                  |
                  v
   +------------------------------+
-  | Query Application Insights   |
-  | (current avg response time)  |
+  | Query App Insights (prod)    |
+  | (last 5m avg response time)  |
   +--------------+---------------+
                  |
                  v
@@ -228,26 +230,42 @@ ASCII flow (typical):
   +--------+-------+             |
            |                     v
            |          +-----------------------+
-           |          | Verify slots/app      |
-           |          | (prod/staging health) |
+           |          | Query App Insights    |
+           |          | (staging slot, last5m)|
            |          +----------+------------+
            |                     |
-           |                     v
-           |          +-----------------------+
-           |          | Execute slot swap     |
-           |          +----------+------------+
-           |                     |
-           |                     v
-           |          +-----------------------+
-           |          | Re-query App Insights |
-           |          | (confirm improvement) |
-           |          +----------+------------+
-           |                     |
-           v                     v
-  +----------------+   +----------------------+
-  | Post summary   |   | Post summary         |
-  | (Teams/email)  |   | + GitHub issue (opt) |
-  +----------------+   +----------------------+
+           |          +----------+-----------+
+           |          |                      |
+           |          v                      v
+           |  +-----------------+  +---------------------+
+           |  | Both slots slow |  | Staging is faster   |
+           |  | (skip swap)     |  | Execute slot swap   |
+           |  +--------+--------+  +----------+----------+
+           |           |                      |
+           |           |                      v
+           |           |           +---------------------+
+           |           |           | Wait 3 min warmup   |
+           |           |           +----------+----------+
+           |           |                      |
+           |           |                      v
+           |           |           +---------------------+
+           |           |           | Re-query App Insights|
+           |           |           | (post-swap, last 5m)|
+           |           |           +----------+----------+
+           |           |                      |
+           |           |           +----------+-----------+
+           |           |           |                      |
+           |           |           v                      v
+           |           |  +-----------------+  +---------------------+
+           |           |  | Still elevated  |  | Back to baseline    |
+           |           |  | (swap back)     |  | (resolved)          |
+           |           |  +--------+--------+  +----------+----------+
+           |           |           |                      |
+           v           v           v                      v
+  +----------------------------------------------------------+
+  | Post summary (Teams) + GitHub issue (always if slow)     |
+  | Outcome: Resolved / Swap reverted / No swap (both slow)  |
+  +----------------------------------------------------------+
 ```
 
 Useful options:

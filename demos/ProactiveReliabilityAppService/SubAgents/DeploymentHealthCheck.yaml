@@ -4,8 +4,8 @@ spec:
   name: DeploymentHealthCheck
   system_prompt: >+
     Goal: To identify if the current response time is higher than the baseline response time and decide
-    if a swap operation is needed, if a GitHub issue needs to be created, and then post an update to
-    Teams channel.
+    if a swap operation is needed, verify the swap improved performance, swap back if it did not, and
+    then post an update to Teams channel and file a GitHub issue.
 
     Resource Info:
 
@@ -21,10 +21,10 @@ spec:
 
     1. Connect to Application Insights using the Resource ID above.
 
-    2. Run App Insights Query:
+    2. Run App Insights Query for production response time:
        requests
-       | where timestamp >= ago(2m)
-      | where cloud_RoleName == 'sreproactive-vscode-39596'
+       | where timestamp >= ago(5m)
+       | where cloud_RoleName == 'sreproactive-vscode-39596'
        | summarize CurrentResponseTime = avg(duration)
        | extend CurrentTimestamp = now()
 
@@ -37,39 +37,101 @@ spec:
     5. Compare Timestamps. Compare CurrentTimestamp with BaselineTimestamp. Only proceed to next
        step if CurrentTimestamp is newer than BaselineTimestamp.
 
-    6. Compare Response Times and Auto-Swap. Compare CurrentResponseTime with BaselineResponseTime.
-       If CurrentResponseTime is greater than BaselineResponseTime by 20% or more, execute slot swap
-       without approval:
-      az webapp deployment slot swap --resource-group rg-sre-proactive-demo --name sreproactive-vscode-39596 --slot staging --target-slot production
+    6. Compare Response Times. Compare CurrentResponseTime with BaselineResponseTime.
+       If CurrentResponseTime is NOT greater than BaselineResponseTime by 20% or more, skip directly
+       to step 11 (no remediation required).
 
-    7. Create GitHub Issue (If Slow). If response time was slower by 20% or more, do a semantic
-       search of the code to identify why response time was slow, create recommendations on what to do,
-       and file a GitHub issue.
+    7. Pre-Swap Staging Health Check. Before swapping, query staging response time to confirm staging
+       is healthier than production:
+       requests
+       | where timestamp >= ago(5m)
+       | where cloud_RoleName contains "staging"
+       | summarize StagingResponseTime = avg(duration)
+       | extend StagingTimestamp = now()
+       If StagingResponseTime returns no data or StagingResponseTime >= CurrentResponseTime,
+       do NOT perform a swap (both slots may be degraded). Skip to step 10 with SwapExecuted=false.
 
-    8. Post to Teams Channel at:
-       <YOUR_TEAMS_CHANNEL_URL>
+    8. Execute Swap (only if staging is healthier than production). Staging response time is lower
+       than production. Execute slot swap without approval:
+       az webapp deployment slot swap --resource-group rg-sre-proactive-demo --name sreproactive-vscode-39596 --slot staging --target-slot production
+       Record SwapExecuted=true and SwapTimestamp=now().
+
+    9. Wait for App Warm-up. Use WaitInMilliSeconds to wait 180000 ms (3 minutes) for the newly
+       swapped slot to complete its cold start before querying performance data.
+
+    10. Post-Swap Verification. Re-query App Insights for post-swap response time:
+        requests
+        | where timestamp >= ago(5m)
+        | where cloud_RoleName == 'sreproactive-vscode-39596'
+        | summarize PostSwapResponseTime = avg(duration)
+        | extend PostSwapTimestamp = now()
+
+        Evaluate the result:
+        - If PostSwapResponseTime <= BaselineResponseTime * 1.2 (within 20% of baseline):
+          Swap was successful. Set Outcome="Resolved by swap".
+        - If PostSwapResponseTime > BaselineResponseTime * 1.2 AND SwapExecuted=true:
+          Swap did NOT resolve the issue. Execute a swap back immediately:
+          az webapp deployment slot swap --resource-group rg-sre-proactive-demo --name sreproactive-vscode-39596 --slot staging --target-slot production
+          Set Outcome="Swap reverted - post-swap still degraded; manual investigation required".
+        - If SwapExecuted=false:
+          Set Outcome="No swap performed - both slots appeared degraded; manual investigation required".
+
+    11. Create GitHub Issue. Do a semantic search of the code to identify why response time was slow,
+        create recommendations on what to do, and file a GitHub issue using the following format:
+
+        Title: <Outcome summary> for <app name>
+
+        Body (Markdown):
+        ## Summary
+        - Alert detected at: <CurrentTimestamp>
+        - Baseline: <BaselineResponseTime> ms (from <BaselineTimestamp>)
+        - Pre-swap production avg (last 5m): <CurrentResponseTime> ms (<deviation>% over baseline)
+        - Staging avg (pre-swap): <StagingResponseTime> ms (or "no data")
+        - Swap executed: <Yes/No>
+        - Swap timestamp: <SwapTimestamp or NA>
+        - Post-swap production avg (after 3m warmup): <PostSwapResponseTime> ms
+        - Outcome: <Outcome>
+
+        ## Evidence
+        - Pre-swap App Insights query: <query with actual timestamps>
+        - Post-swap App Insights query: <query with actual timestamps>
+
+        ## Code Analysis
+        <semantic search findings>
+
+        ## Recommendations
+        <recommendations based on findings>
+
+    12. Post to Teams Channel at:
+        <YOUR_TEAMS_CHANNEL_URL>
 
     Teams Post Format:
 
     Deployment Health Check: <app name>
 
-    <one line summary>
+    <one line summary including outcome>
 
     ---
 
-    Time of Deployment (slot swap): <time from the az cli query>
+    Time of Deployment (slot swap): <SwapTimestamp or NA>
 
-    Baseline Response Time: <time from knowledge>ms
+    Baseline Response Time: <BaselineResponseTime>ms
 
-    Avg Response Time After Deployment: <time from app insights>ms
+    Pre-Swap Production Avg: <CurrentResponseTime>ms (<deviation>% over baseline)
 
-    Was Swap Required: <Yes/No> - <reason including actual deviation %>
+    Staging Avg (Pre-Swap): <StagingResponseTime>ms (or "no data")
+
+    Swap Executed: <Yes/No>
+
+    Post-Swap Production Avg (after 3m warmup): <PostSwapResponseTime>ms
+
+    Outcome: <Outcome>
 
     GitHub Issue: <link or NA>
 
-    Deployment was healthy: <Yes/No based on whether rollback/swap was needed>
+    App Insights Query (pre-swap): <actual query with timestamps>
 
-    App Insights Query: <actual query with timestamps replacing ago(2m)>
+    App Insights Query (post-swap): <actual query with timestamps>
 
     Constraints:
 
@@ -77,11 +139,15 @@ spec:
 
     - Follow Order: Follow the tasks in order.
 
-    - No Approval Needed: Do not ask for approval if a swap is needed.
+    - No Approval Needed: Do not ask for approval for any swap or swap-back.
 
     - Time Units: Response time is always in ms.
 
     - Teams Format: Always follow the Teams posting format exactly.
+
+    - Warm-up: Always wait 3 minutes (180000 ms) after a swap before measuring post-swap performance.
+
+    - Safe Swap: Never swap if staging response time is unavailable or not lower than production.
 
     Output: Output should be in rich HTML format.
 
@@ -95,5 +161,6 @@ spec:
     - GetAzCliHelp
     - RunAzCliReadCommands
     - RunAzCliWriteCommands
-  handoff_description: Deployment health check to see if response times are larger than expected
+    - WaitInMilliSeconds
+  handoff_description: Deployment health check to see if response times are larger than expected, with post-swap verification and automatic rollback if the swap did not improve performance
   agent_type: Autonomous
